@@ -3,10 +3,176 @@
 	{
 		"selected_items":
 		[
+			[
+				"view",
+				"viewportSize"
+			],
+			[
+				"li",
+				"linId"
+			],
+			[
+				"thr",
+				"throughputVal"
+			],
+			[
+				"rayd",
+				"rayDirectionX"
+			],
+			[
+				"mat",
+				"materialId"
+			],
+			[
+				"mater",
+				"materials"
+			],
+			[
+				"material",
+				"materialId"
+			],
+			[
+				"nor",
+				"normalX"
+			],
+			[
+				"ra",
+				"rayDirectionZ"
+			],
+			[
+				"raydi",
+				"rayDirectionY"
+			],
+			[
+				"bounce",
+				"bounceIdx"
+			],
+			[
+				"float",
+				"float32"
+			],
+			[
+				"co",
+				"constant"
+			],
+			[
+				"vi",
+				"viewParamsData"
+			],
+			[
+				"bou",
+				"bounceIdx"
+			],
+			[
+				"ca",
+				"cameraPos_buf"
+			],
+			[
+				"VI",
+				"VIEWPORT_H"
+			],
+			[
+				"invp",
+				"invProj_buf"
+			],
+			[
+				"invview",
+				"invView_buf"
+			],
+			[
+				"fl",
+				"float32"
+			],
+			[
+				"flo",
+				"float4x4"
+			],
+			[
+				"fr",
+				"from"
+			],
+			[
+				"gcc",
+				"gcc_version"
+			]
 		]
 	},
 	"buffers":
 	[
+		{
+			"file": "main.py",
+			"settings":
+			{
+				"buffer_size": 5567,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "glutil.py",
+			"settings":
+			{
+				"buffer_size": 2007,
+				"line_ending": "Windows",
+				"name": "from OpenGL.GL import *"
+			}
+		},
+		{
+			"file": "vector.py",
+			"settings":
+			{
+				"buffer_size": 2752,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "emitInitialRays.cl",
+			"settings":
+			{
+				"buffer_size": 1314,
+				"line_ending": "Windows",
+				"name": "__kernel void part1(__global float* a, __global fl"
+			}
+		},
+		{
+			"file": "bounce.cl",
+			"settings":
+			{
+				"buffer_size": 3074,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "intersect.cl",
+			"settings":
+			{
+				"buffer_size": 1154,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "intersectShadow.cl",
+			"settings":
+			{
+				"buffer_size": 813,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "genShadowRay.cl",
+			"settings":
+			{
+				"buffer_size": 1138,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "shared.h",
+			"settings":
+			{
+				"buffer_size": 5067,
+				"line_ending": "Windows"
+			}
+		}
 	],
 	"build_system": "",
 	"command_palette":
@@ -32,6 +198,18 @@
 	},
 	"file_history":
 	[
+		"/C/Users/zhaoz3/Documents/lightway2/lightwayrt/.gitignore",
+		"/C/Users/zhaoz3/Documents/lightway2/lightwayrt/python/transformations.py",
+		"/C/Users/zhaoz3/Documents/lightway2/lightwayrt/python/Random123-1.06/include/Random123/philox.h",
+		"/C/Users/zhaoz3/Documents/lightway2/lightwayrt/python/Random123-1.06/include/Random123/features/openclfeatures.h",
+		"/C/Users/zhaoz3/Documents/lightway2/lightwayrt/python/Random123-1.06/include/Random123/features/compilerfeatures.h",
+		"/C/Users/zhaoz3/Downloads/pyopencl/pyopencl-2012.1/README_SETUP.txt",
+		"/C/Users/zhaoz3/Downloads/pyopencl/pyopencl-2012.1/pyopencl-2012.1/aksetup_helper.py",
+		"/C/Python32/Lib/distutils/cygwinccompiler.py",
+		"/C/Users/zhaoz3/Downloads/pyopencl/pyopencl-2012.1/pyopencl-2012.1/setup.cfg",
+		"/C/Python32/Lib/distutils/msvc9compiler.py",
+		"/C/Users/zhaoz3/Downloads/pyopencl/pyopencl-2012.1/pyopencl-2012.1/siteconf.py",
+		"/C/Python32/Lib/distutils/README",
 		"/C/Users/zhaoz3/Documents/lightway/assets/validation/t_validation1.mtl",
 		"/C/Users/zhaoz3/Downloads/pbrt_src_1.02_reorganized_20071111/_pbrt_src_1.02_reorganized_20071111/integrators/bdpt/bdpt5.cpp",
 		"/C/Users/zhaoz3/Dropbox/gfx/gfx/Debug/shaders/ssr.hlsl",
@@ -68,11 +246,11 @@
 	],
 	"find":
 	{
-		"height": 43.0
+		"height": 76.0
 	},
 	"find_in_files":
 	{
-		"height": 0.0,
+		"height": 120.0,
 		"where_history":
 		[
 		]
@@ -82,6 +260,57 @@
 		"case_sensitive": false,
 		"find_history":
 		[
+			"max",
+			"vl",
+			"scene.",
+			"albedo",
+			"camerapo",
+			"* PI",
+			"PI *",
+			"PI",
+			"* PI",
+			"pi",
+			"const",
+			"value",
+			"y",
+			"40",
+			"lightpos",
+			"sat",
+			"camera",
+			"(hit)",
+			"float3(",
+			"rand",
+			"163",
+			"zfar",
+			"znear",
+			"][",
+			"result[",
+			"valType(2)",
+			"valtype(",
+			".z",
+			".y",
+			".x",
+			"][",
+			"Result",
+			"_mulhilo_dword_tpl",
+			"word",
+			"dword",
+			"vector",
+			"vec",
+			"ld_args.append",
+			"\\n",
+			"link",
+			"library_dirs",
+			"-s",
+			"-I",
+			"g++",
+			"ld",
+			"gcc",
+			"g++",
+			"AMD APP",
+			"flag",
+			"-mno-cygwin",
+			"get_ver",
 			"looka",
 			"%panaso",
 			"mymod",
@@ -113,8 +342,258 @@
 	"groups":
 	[
 		{
+			"selected": 3,
 			"sheets":
 			[
+				{
+					"buffer": 0,
+					"file": "main.py",
+					"settings":
+					{
+						"buffer_size": 5567,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								4441,
+								4441
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Python/Python.tmLanguage",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 4180.0,
+						"zoom_level": 1.0
+					},
+					"type": "text"
+				},
+				{
+					"buffer": 1,
+					"file": "glutil.py",
+					"settings":
+					{
+						"buffer_size": 2007,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								69,
+								69
+							]
+						],
+						"settings":
+						{
+							"auto_name": "from OpenGL.GL import *",
+							"syntax": "Packages/Python/Python.tmLanguage",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"type": "text"
+				},
+				{
+					"buffer": 2,
+					"file": "vector.py",
+					"settings":
+					{
+						"buffer_size": 2752,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								2752,
+								2752
+							]
+						],
+						"settings":
+						{
+							"auto_name": "",
+							"syntax": "Packages/Python/Python.tmLanguage",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 252.0,
+						"zoom_level": 1.0
+					},
+					"type": "text"
+				},
+				{
+					"buffer": 3,
+					"file": "emitInitialRays.cl",
+					"settings":
+					{
+						"buffer_size": 1314,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								298,
+								298
+							]
+						],
+						"settings":
+						{
+							"auto_name": "__kernel void part1(__global float* a, __global fl",
+							"syntax": "Packages/OpenCL/OpenCL.tmLanguage",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"type": "text"
+				},
+				{
+					"buffer": 4,
+					"file": "bounce.cl",
+					"settings":
+					{
+						"buffer_size": 3074,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								1311,
+								1311
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/OpenCL/OpenCL.tmLanguage",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 1260.0,
+						"zoom_level": 1.0
+					},
+					"type": "text"
+				},
+				{
+					"buffer": 5,
+					"file": "intersect.cl",
+					"settings":
+					{
+						"buffer_size": 1154,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								184,
+								194
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/OpenCL/OpenCL.tmLanguage",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 420.0,
+						"zoom_level": 1.0
+					},
+					"type": "text"
+				},
+				{
+					"buffer": 6,
+					"file": "intersectShadow.cl",
+					"settings":
+					{
+						"buffer_size": 813,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								341,
+								102
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/OpenCL/OpenCL.tmLanguage",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"type": "text"
+				},
+				{
+					"buffer": 7,
+					"file": "genShadowRay.cl",
+					"settings":
+					{
+						"buffer_size": 1138,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								479,
+								479
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/OpenCL/OpenCL.tmLanguage",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 420.0,
+						"zoom_level": 1.0
+					},
+					"type": "text"
+				},
+				{
+					"buffer": 8,
+					"file": "shared.h",
+					"settings":
+					{
+						"buffer_size": 5067,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								558,
+								476
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/OpenCL/OpenCL.tmLanguage",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 840.0,
+						"zoom_level": 1.0
+					},
+					"type": "text"
+				}
 			]
 		}
 	],
@@ -149,6 +628,10 @@
 		]
 	},
 	"menu_visible": true,
+	"output.exec":
+	{
+		"height": 148.0
+	},
 	"replace":
 	{
 		"height": 0.0
@@ -164,11 +647,15 @@
 	},
 	"select_project":
 	{
-		"height": 0.0,
+		"height": 500.0,
 		"selected_items":
 		[
+			[
+				"",
+				"/C/Users/zhaoz3/Documents/lightway2/lightwayrt/python/lightwayrt.sublime-project"
+			]
 		],
-		"width": 0.0
+		"width": 380.0
 	},
 	"show_minimap": true,
 	"show_open_files": false,

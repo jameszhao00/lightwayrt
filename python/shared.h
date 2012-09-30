@@ -1,7 +1,5 @@
-
 #include "C:\Users\zhaoz3\Documents\lightway2\lightwayrt\python\Random123-1.06\include\Random123\philox.h"
 #include "C:\Users\zhaoz3\Documents\lightway2\lightwayrt\python\Random123-1.06\include\Random123\u01.h"
-
 typedef struct 
 {
 	float4 data[4];
@@ -32,28 +30,40 @@ float4 mul(f4x4 m, float4 v)
 #define VIEWPORT_W 1600
 #define VIEWPORT_H 1000
 
+
 typedef struct
 {
 	float3 albedo;
-	float specPower;
 } Material;
+
+
+Material getMaterial(int materialId)
+{
+	const Material materials[4] = {
+		{(float3)(.7, .8, .6)},
+		{(float3)(.4, .5, .8)},
+		{(float3)(.8, .1, .2)},
+		{(float3)(.7, .7,.7)}
+	};
+	return materials[materialId];
+}
 typedef struct
 {
 	float3 normal;
 	float3 position;
-	Material material;
+	int materialId;
 	float t;
 } Hit;
 typedef struct
 {
 	float3 origin;
 	float radius;
-	Material material;
+	int materialId;
 } Sphere;
 typedef struct
 {
 	float y;
-	Material material;
+	int materialId;
 } InfiniteHorizontalPlane;
 typedef struct
 {
@@ -79,7 +89,7 @@ bool intersectInfiniteHorizontalPlane(Ray* this, InfiniteHorizontalPlane* plane,
 		hit->normal = -n;
 		hit->position = l0 + d * l;
 		hit->t = d;
-		hit->material = plane->material;
+		hit->materialId = plane->materialId;
 		return true;
 	}
 	return false;
@@ -110,7 +120,7 @@ bool intersectSphere(Ray* this, Sphere* sphere, Hit* hit)
 			
 			hit->normal = normal;
 			hit->position = hit_pos;
-			hit->material = sphere->material;
+			hit->materialId = sphere->materialId;
 			hit->t = t;
 			return true;	
 			
@@ -119,16 +129,17 @@ bool intersectSphere(Ray* this, Sphere* sphere, Hit* hit)
 	return false;
 }
 
-#define LIGHT_POS ((float3)(0, 10, 8))
+#define LIGHT_POS ((float3)(0, 10, 0))
 float3 brdf(Hit* hit)
 {
 	float3 lightDir = normalize(LIGHT_POS - hit->position);
 	float3 ndotl = dot(hit->normal, lightDir);
-	return hit->material.albedo * saturate3(ndotl);
+	return getMaterial(hit->materialId).albedo * saturate3(ndotl);
 }
 
 #define RED (float3)(1, 0, 0)
 #define HIT_NEXT_RAY_EPSILON 0.0001f
+#define SHADOW_RAY_EPSILON 0.00001f
 //LDDE = 2 bounces, LE = 0 bounces, LDDDE = 3 bounces
 #define NUM_SPHERES 3
 #define NUM_INF_HORIZ_PLANES 1
@@ -137,23 +148,6 @@ typedef struct {
 	Sphere sphere[NUM_SPHERES];
 	InfiniteHorizontalPlane infHorizPlanes[NUM_INF_HORIZ_PLANES];
 } Scene;
-void initScene(Scene* scene)
-{
-	scene->sphere[0].origin = (float3)(0, .6, 3);
-	scene->sphere[0].radius = .7;
-	scene->sphere[0].material.albedo = (float3)(.7, .8, .6);
-	
-	scene->sphere[1].origin = (float3)(-1, .5, 3);
-	scene->sphere[1].radius = .25;
-	scene->sphere[1].material.albedo = (float3)(.4, .5, .8);
-
-	scene->sphere[2].origin = (float3)(-1, -1, 3);
-	scene->sphere[2].radius = 1;
-	scene->sphere[2].material.albedo = (float3)(.8, .1, .2);
-
-	scene->infHorizPlanes[0].y = -1;
-	scene->infHorizPlanes[0].material.albedo = (float3)(.7, .7,.7);
-}
 bool intersectAllGeom(Ray* ray, Scene* scene, Hit* hit)
 {
 	bool hasHit = false;
@@ -230,78 +224,21 @@ typedef struct {
 	f4x4 invView;
 	f4x4 invProj;
 } ViewParams;
-kernel void part1(
-	constant ViewParams* viewParam,
-	global float* color)
-{	 
-	uint2 pixelXy = (uint2)(get_global_id(0), get_global_id(1));
-	uint2 viewportSize = (uint2)(get_global_size(0), get_global_size(1)); 
 
-	float2 ndc = ((convert_float2(pixelXy) / ((float2)(viewportSize.x, viewportSize.y))) - (float2)(0.5, 0.5))
-		* (float2)(2, -2);
-	float4 pView = mul(viewParam->invProj, (float4)(ndc, -1, 1));
-	pView /= pView.w;
-	pView.w = 1;
-	float4 pWorld = mul(viewParam->invView, pView);
+void initScene(Scene* scene)
+{
+	scene->sphere[0].origin = (float3)(0, .6, 3);
+	scene->sphere[0].radius = .7;
+	scene->sphere[0].materialId = 0;
 	
-	Ray cameraRay;
-	cameraRay.direction = normalize(pWorld.xyz - viewParam->cameraPos.xyz);
-	cameraRay.origin = pWorld.xyz;
+	scene->sphere[1].origin = (float3)(-1, .5, 3);
+	scene->sphere[1].radius = .25;
+	scene->sphere[1].materialId = 1;
 
-	Scene scene;
-	initScene(&scene);
+	scene->sphere[2].origin = (float3)(-1, -1, 3);
+	scene->sphere[2].radius = 1;
+	scene->sphere[2].materialId = 2;
 
-	float3 value = 0;
-	for(uint iterationIdx = 0; iterationIdx < NUM_ITERATIONS; iterationIdx++)
-	{
-		Ray ray = cameraRay;
-		float3 throughput = 1;
-		for(uint bounceIdx = 0; bounceIdx < NUM_BOUNCES; bounceIdx++)
-		{
-			Hit hit;
-			if(intersectAllGeom(&ray, &scene, &hit))
-			{
-				float3 lightDir = normalize(LIGHT_POS - hit.position);
-				Ray shadowRay = makeRay(
-					hit.position + lightDir * HIT_NEXT_RAY_EPSILON,
-					lightDir);
-				Hit shadowHit;
-				if(!intersectAllGeom(&shadowRay, &scene, &shadowHit))
-				{		
-					value += throughput * brdf(&hit) * M_PI_F; //normalization doesn't look right	
-				}
-
-				if(bounceIdx < NUM_BOUNCES - 1)
-				{
-					float2 u = rand2(pixelXy.x + pixelXy.y * viewportSize.x, 
-						(uint2)(bounceIdx, iterationIdx));
-
-					float pdf;
-					float3 wiWorld = sampleCosWeightedHemi(hit.normal, u, &pdf);
-
-					throughput *= M_PI_F * hit.material.albedo;
-					
-					ray = makeRay(
-						hit.position + wiWorld * HIT_NEXT_RAY_EPSILON,
-						wiWorld);
-				}
-			}
-			else
-			{
-				break;
-			}
-		}
-	}
-	
-	value /= NUM_ITERATIONS;
-	value = value / (1 + value);
-	/*
-	int existingNumSamples = g_time_sampleCount.y;
-	float existingRatio = (float)existingNumSamples / (existingNumSamples + 1);
-	float newRatio = 1 - existingRatio;
-	float4 existing = InputMap.Load(int3(pixelXy, 0));
-	OutputMap[pixelXy] = existingRatio * existing + newRatio * float4(value, 1);
-	*/	
-	
-	vstore4((float4)(value, 1), viewportSize.x * pixelXy.y + pixelXy.x, color);
+	scene->infHorizPlanes[0].y = -1;
+	scene->infHorizPlanes[0].materialId = 3;
 }

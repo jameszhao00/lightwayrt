@@ -13,46 +13,46 @@ import struct
 import itertools
 
 def normalize(v):
-	return v / la.norm(v)
+    return v / la.norm(v)
 
 def look_at(eye, center, up):
-	eye = eye if type(eye) is np.array else np.array(eye)
-	center = center if type(center) is np.array else np.array(center)
-	up = up if type(up) is np.array else np.array(up)
+    eye = eye if type(eye) is np.array else np.array(eye)
+    center = center if type(center) is np.array else np.array(center)
+    up = up if type(up) is np.array else np.array(up)
 
-	f = normalize(center - eye)
-	u = normalize(up)
-	s = normalize(np.cross(f, u))
-	u = np.cross(s, f)
-	m = np.eye(4, dtype=np.float32)
-	m[0,0] = s[0]
-	m[1,0] = s[1]
-	m[2,0] = s[2]
-	m[0,1] = u[0]
-	m[1,1] = u[1]
-	m[2,1] = u[2]
-	m[0,2] =-f[0]
-	m[1,2] =-f[1]
-	m[2,2] =-f[2]
-	m[3,0] =-np.dot(s, eye)
-	m[3,1] =-np.dot(u, eye)
-	m[3,2] = np.dot(f, eye)
-	return m
+    f = normalize(center - eye)
+    u = normalize(up)
+    s = normalize(np.cross(f, u))
+    u = np.cross(s, f)
+    m = np.eye(4, dtype=np.float32)
+    m[0,0] = s[0]
+    m[1,0] = s[1]
+    m[2,0] = s[2]
+    m[0,1] = u[0]
+    m[1,1] = u[1]
+    m[2,1] = u[2]
+    m[0,2] =-f[0]
+    m[1,2] =-f[1]
+    m[2,2] =-f[2]
+    m[3,0] =-np.dot(s, eye)
+    m[3,1] =-np.dot(u, eye)
+    m[3,2] = np.dot(f, eye)
+    return m
 
 def perspective(fov_degrees, ar, zn, zf):
-	range = math.tan(math.radians(fov_degrees / 2)) * zn	
-	left = -range * ar;
-	right = range * ar;
-	bottom = -range;
-	top = range;
+    range = math.tan(math.radians(fov_degrees / 2)) * zn    
+    left = -range * ar;
+    right = range * ar;
+    bottom = -range;
+    top = range;
 
-	m = np.zeros((4,4), dtype=np.float32)
-	m[0,0] = (2 * zn) / (right - left)
-	m[1,1] = (2 * zn) / (top - bottom)
-	m[2,2] = - (zf + zn) / (zf - zn)
-	m[2,3] = - 1;
-	m[3,2] = - (2 * zf * zn) / (zf - zn);
-	return m;
+    m = np.zeros((4,4), dtype=np.float32)
+    m[0,0] = (2 * zn) / (right - left)
+    m[1,1] = (2 * zn) / (top - bottom)
+    m[2,2] = - (zf + zn) / (zf - zn)
+    m[2,3] = - 1;
+    m[3,2] = - (2 * zf * zn) / (zf - zn);
+    return m;
 
 class window(object):
     def __init__(self, *args, **kwargs):
@@ -152,38 +152,116 @@ class window(object):
 
         glutSwapBuffers()
 
+def loadProgram(path, ctx):
+    f = open(path, 'r')
+    fstr = ''.join(f.readlines())
+    return cl.Program(ctx, fstr).build()
+def float3buf(f4count, ctx):
+    bytesPerFloat = 4
+    return [
+        cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, f4count * bytesPerFloat),
+        cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, f4count * bytesPerFloat),
+        cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, f4count * bytesPerFloat)]
 
+
+def together(*el):
+    final = []
+    for x in el:
+        if type(x) is list or type(x) is tuple:
+            final.extend(x)
+        else:
+            final.append(x)
+    return final
 def test_cl():
-	ctx = cl.create_some_context()#(interactive=False)
+    ctx = cl.create_some_context()#(interactive=False)
 
-	#print 'ctx', ctx
-	queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_ENABLE)
-	f = open('part1.cl', 'r')
-	fstr = ''.join(f.readlines())
-	program = cl.Program(ctx, fstr).build()
-	mf = cl.mem_flags
+    #print 'ctx', ctx
+    queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_ENABLE)
+    emitInitialRaysProg = loadProgram('emitInitialRays.cl', ctx)
+    intersectProg = loadProgram('intersect.cl', ctx)
+    genShadowRaysProg = loadProgram('genShadowRay.cl', ctx)
+    intersectShadowProg = loadProgram('intersectShadow.cl', ctx)
+    bounceProg = loadProgram('bounce.cl', ctx)
 
-	cameraPos = np.array([0,0,.5,1])
-	invView = la.inv(look_at((0,0,.5), (0,0,100), (0,1,0)))
-	invProj = la.inv(perspective(60, 1, 1, 1000))
-	print 'view', invView
-	print 'proj', invProj
-	viewParamsData = cameraPos.flatten().tolist() + np.transpose(invView).flatten().tolist() + np.transpose(invProj).flatten().tolist()
-	#print 'vpd', viewParamsData
-	viewParams = struct.pack('4f16f16f', *viewParamsData)
-	viewParams_buf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=viewParams)
+    cameraPos = np.array([0,0,.5,1])
+    invView = la.inv(look_at((0,0,.5), (0,0,100), (0,1,0)))
+    invProj = la.inv(perspective(60, 1, 1, 1000))
+    print 'view', invView
+    print 'proj', invProj
+    viewParamsData = cameraPos.flatten().tolist() + np.transpose(invView).flatten().tolist() + np.transpose(invProj).flatten().tolist()
+    #print 'vpd', viewParamsData
+    viewParams = struct.pack('4f16f16f', *viewParamsData)
+    viewParams_buf = cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=viewParams)
 
-	#setup opencl
-	dest = np.ndarray((1000, 1000, 4), dtype=np.float32)	
-	dest_buf = cl.Buffer(ctx, mf.WRITE_ONLY, dest.nbytes)
+    dest = np.ndarray((1000, 1000, 4), dtype=np.float32)    
+    dest_buf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, dest.nbytes)
+    vpshape = (dest.shape[0], dest.shape[1])
+    linshape = (vpshape[0] * vpshape[1], 1)
 
-	#run kernel
-	evt = program.part1(queue, (dest.shape[0], dest.shape[1]), None, viewParams_buf, dest_buf)
-	#evt = program.part1(queue, dest.shape, None, dest_buf)
-	cl.enqueue_read_buffer(queue, dest_buf, dest).wait()
-	print 'time', (evt.profile.end - evt.profile.start) * 0.000001, 'ms'
-	return dest
+    numPixels = 1000 * 1000
+    lightRayPositionBufs = float3buf(numPixels, ctx)
+    lightRayDirectionBufs = float3buf(numPixels, ctx)
+    shadowRayPositionBufs = float3buf(numPixels, ctx)
+    shadowRayDirectionBufs = float3buf(numPixels, ctx)
+
+    hitPositionBufs = float3buf(numPixels, ctx)
+    hitNormalBufs = float3buf(numPixels, ctx)
+    initialThroughputs = np.ones(linshape, dtype=np.float32)
+    throughputBufs = [
+        cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=initialThroughputs),
+        cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=initialThroughputs),
+        cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=initialThroughputs)]
+
+    expectedTBuf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, numPixels * 4)
+    obstructedBuf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, numPixels * 4)
+    materialIdBuf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, numPixels * 4)
+
+    #process
+    #emit initial rays
+    #   intersect w/ scene
+    #   gen shadow rays
+    #   intersect shadow rays
+    #   bounce
+
+    #setup opencl
+    #run kernel
+    emitInitialRays_evt = emitInitialRaysProg.emitInitialRays(queue, vpshape, None, 
+        *together(viewParams_buf, lightRayPositionBufs, lightRayDirectionBufs))
+
+    intersect_evt = intersectProg.intersect(queue, vpshape, None, 
+        *together(lightRayPositionBufs, lightRayDirectionBufs, hitNormalBufs, hitPositionBufs, materialIdBuf))
+
+    genShadowRay_evt = genShadowRaysProg.genShadowRay(queue, vpshape, None, 
+        *together(hitPositionBufs, shadowRayPositionBufs, shadowRayDirectionBufs, expectedTBuf))
+
+    intersectShadow_evt = intersectShadowProg.intersectShadow(queue, vpshape, None, 
+        *together(shadowRayPositionBufs, shadowRayDirectionBufs, expectedTBuf, obstructedBuf))
+
+    bounceFinal_evt = bounceProg.bounceFinal(queue, vpshape, None,
+        *together(obstructedBuf, hitNormalBufs, hitPositionBufs, materialIdBuf, throughputBufs, dest_buf))
+
+    debug = np.zeros(vpshape, dtype=np.float32)
+    cl.enqueue_read_buffer(queue, dest_buf, dest).wait()
+    #cl.enqueue_read_buffer(queue, hitNormalBufs[1], debug).wait()q
+    profileEvents = {
+        'emitInitialRays': emitInitialRays_evt,
+        'intersect': intersect_evt,
+        'genShadowRay': genShadowRay_evt,
+        'intersectShadow': intersectShadow_evt,
+        'bounceFinal': bounceFinal_evt
+    }
+
+
+    totalTime = 0
+    for name, evt in profileEvents.iteritems():
+        time = (evt.profile.end - evt.profile.start)* 0.000001
+        totalTime += time
+        print name, time , 'ms'
+    print 'total time', totalTime
+
+    #return debug
+    return dest
 
 if __name__ == "__main__":
-	test_cl()
+    test_cl()
     #p2 = window()
