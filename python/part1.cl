@@ -223,8 +223,8 @@ float3 sampleCosWeightedHemi(float3 nWorld, float2 u, float *pdf)
 	*pdf = b / M_PI_F; //cos(acos(sqrt(u.y))) / pi
 	return changeCoordSys(nWorld, (float3)(0, 0, 1), wi);
 }
-#define NUM_BOUNCES 3
-#define NUM_ITERATIONS 300
+#define NUM_BOUNCES 1
+#define NUM_ITERATIONS 1
 typedef struct {
 	float4 cameraPos;
 	f4x4 invView;
