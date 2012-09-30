@@ -118,7 +118,7 @@ bool intersectSphere(Ray this, Sphere sphere, Hit* hit)
 	return false;
 }
 
-#define LIGHT_POS ((float3)(0, 10, -8))
+#define LIGHT_POS ((float3)(0, 10, 8))
 float3 brdf(Hit hit)
 {
 	float3 lightDir = normalize(LIGHT_POS - hit.position);
@@ -139,15 +139,15 @@ bool intersectAllGeom(Ray ray, Hit* hit)
 	InfiniteHorizontalPlane infHorizPlanes[NUM_INF_HORIZ_PLANES];
 
 
-	sphere[0].origin = (float3)(0, .6, -3);
+	sphere[0].origin = (float3)(0, .6, 3);
 	sphere[0].radius = .7;
 	sphere[0].material.albedo = (float3)(.7, .8, .6);
 	
-	sphere[1].origin = (float3)(-1, .5, -3);
+	sphere[1].origin = (float3)(-1, .5, 3);
 	sphere[1].radius = .25;
 	sphere[1].material.albedo = (float3)(.4, .5, .8);
 
-	sphere[2].origin = (float3)(-1, -1, -3);
+	sphere[2].origin = (float3)(-1, -1, 3);
 	sphere[2].radius = 1;
 	sphere[2].material.albedo = (float3)(.8, .1, .2);
 
@@ -244,7 +244,7 @@ kernel void part1(
 	pView /= pView.w;
 	pView.w = 1;
 	float4 pWorld = mul(viewParam->invView, pView);
-	
+
 	Ray cameraRay;
 	cameraRay.direction = normalize(pWorld.xyz - viewParam->cameraPos.xyz);
 	cameraRay.origin = pWorld.xyz;
@@ -312,4 +312,5 @@ kernel void part1(
 	*/	
 	
 	vstore4((float4)(value, 1), viewportSize.x * pixelXy.y + pixelXy.x, color);
+	
 }

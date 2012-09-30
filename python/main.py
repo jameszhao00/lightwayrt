@@ -19,6 +19,7 @@ def look_at(eye, center, up):
 	eye = eye if type(eye) is np.array else np.array(eye)
 	center = center if type(center) is np.array else np.array(center)
 	up = up if type(up) is np.array else np.array(up)
+
 	f = normalize(center - eye)
 	u = normalize(up)
 	s = normalize(np.cross(f, u))
@@ -162,13 +163,13 @@ def test_cl():
 	program = cl.Program(ctx, fstr).build()
 	mf = cl.mem_flags
 
-	invView = la.inv(look_at((0,0,0), (0,0,-1), (0,1,0)))
+	cameraPos = np.array([0,0,.5,1])
+	invView = la.inv(look_at((0,0,.5), (0,0,100), (0,1,0)))
 	invProj = la.inv(perspective(60, 1, 1, 1000))
-	cameraPos = np.array([0,0,0,1])
-	print 'ivv', invView.ravel().tolist()
-	print 'ivp', invProj.ravel().tolist()
-	viewParamsData = cameraPos.flatten().tolist() + invView.flatten().tolist() + invProj.flatten().tolist()
-	print 'vpd', len(viewParamsData)
+	print 'view', invView
+	print 'proj', invProj
+	viewParamsData = cameraPos.flatten().tolist() + np.transpose(invView).flatten().tolist() + np.transpose(invProj).flatten().tolist()
+	#print 'vpd', viewParamsData
 	viewParams = struct.pack('4f16f16f', *viewParamsData)
 	viewParams_buf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=viewParams)
 
