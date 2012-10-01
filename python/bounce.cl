@@ -73,38 +73,28 @@ kernel void bounce(
 
 }
 
+
+
 kernel void bounceFinal(
 	const global uint* obstructed,
-	const global float* normalX,
-	const global float* normalY,
-	const global float* normalZ,
-	const global float* positionX, 
-	const global float* positionY,
-	const global float* positionZ,
-	const global uint* materialId,	
-	const global float* throughputR, //read write
-	const global float* throughputG, //read write
-	const global float* throughputB, //read write
-
+	const global Hit* hits,
+	const global float* throughputs,
 	global float* color)
 {	 
 
 	uint2 pixelXy = (uint2)(get_global_id(0), get_global_id(1));
-	uint2 viewportSize = (uint2)(get_global_size(0), get_global_size);
+	uint2 viewportSize = (uint2)(get_global_size(0), get_global_size(1));
 	uint linid = pixelXy.x + pixelXy.y * viewportSize.x;
 
 	float3 value;
-	if(materialId[linid] == -1 || obstructed[linid] == 1) //hit nothing
+	if(hits[linid].materialId == -1 || obstructed[linid] == 1) //hit nothing
 	{
 		value = 0;
 	}
 	else
 	{	
-		Hit hit;
-		hit.normal = (float3)(normalX[linid], normalY[linid], normalZ[linid]);	
-		hit.position = (float3)(positionX[linid], positionY[linid], positionZ[linid]);;
-		hit.materialId = materialId[linid];
-		float3 throughputVal = (float3)(throughputR[linid], throughputG[linid], throughputB[linid]);
+		Hit hit = hits[linid];
+		float3 throughputVal = vload3(linid, throughputs);
 		value = throughputVal * brdf(&hit) * M_PI_F; //normalization doesn't look right
 	}
 	value = value / (1 + value);

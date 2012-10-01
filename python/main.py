@@ -209,11 +209,8 @@ def test_cl():
 
     hitPositionBufs = float3buf(numPixels, ctx)
     hitNormalBufs = float3buf(numPixels, ctx)
-    initialThroughputs = np.ones(linshape, dtype=np.float32)
-    throughputBufs = [
-        cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=initialThroughputs),
-        cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=initialThroughputs),
-        cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=initialThroughputs)]
+    initialThroughputs = np.ones((linshape[0] * 3) , dtype=np.float32)
+    throughputBufs = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=initialThroughputs)
 
     expectedTBuf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, numPixels * 4)
     obstructedBuf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, numPixels * 4)
@@ -226,25 +223,34 @@ def test_cl():
     #   intersect shadow rays
     #   bounce
 
+    #MUST REMEMBER TO CHANGE
+    # * 2 at end = a quick hack for padding issues
+    rayStructByteSize = (3 + 3) * 4 * 2
+    hitStructByteSize = (3 + 3 + 1 + 1) * 4 * 2
+
+    lightRaysBuf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, numPixels * rayStructByteSize)
+    hitsBuf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, numPixels * hitStructByteSize)
+    shadowRaysBuf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, numPixels * rayStructByteSize)
     #setup opencl
     #run kernel
     buildScene_evt = buildSceneProg.buildScene(queue, (1, 1), None,
         *together(sceneBuf))
 
     emitInitialRays_evt = emitInitialRaysProg.emitInitialRays(queue, vpshape, None, 
-        *together(viewParams_buf, lightRayPositionBufs, lightRayDirectionBufs))
+        *together(viewParams_buf, lightRaysBuf))
 
     intersect_evt = intersectProg.intersect(queue, vpshape, None, 
-        *together(sceneBuf, lightRayPositionBufs, lightRayDirectionBufs, hitNormalBufs, hitPositionBufs, materialIdBuf))
+        *together(sceneBuf, lightRaysBuf, hitsBuf))
 
     genShadowRay_evt = genShadowRaysProg.genShadowRay(queue, vpshape, None, 
-        *together(hitPositionBufs, shadowRayPositionBufs, shadowRayDirectionBufs, expectedTBuf))
+        *together(hitsBuf, shadowRaysBuf, expectedTBuf))
 
     intersectShadow_evt = intersectShadowProg.intersectShadow(queue, vpshape, None, 
-        *together(sceneBuf, shadowRayPositionBufs, shadowRayDirectionBufs, expectedTBuf, obstructedBuf))
+        *together(sceneBuf, shadowRaysBuf, expectedTBuf, obstructedBuf))
 
     bounceFinal_evt = bounceProg.bounceFinal(queue, vpshape, None,
-        *together(obstructedBuf, hitNormalBufs, hitPositionBufs, materialIdBuf, throughputBufs, dest_buf))
+        *together(obstructedBuf, hitsBuf, throughputBufs, dest_buf))
+
 
     debug = np.zeros(vpshape, dtype=np.float32)
     queue.finish()

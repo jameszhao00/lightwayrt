@@ -2,12 +2,7 @@
 
 kernel void emitInitialRays(
 	constant ViewParams* viewParam,
-	global float* rayOriginX,
-	global float* rayOriginY,
-	global float* rayOriginZ,
-	global float* rayDirectionX,
-	global float* rayDirectionY,
-	global float* rayDirectionZ)
+	global Ray* rays)
 {	 
 	uint2 pixelXy = (uint2)(get_global_id(0), get_global_id(1));
 	uint2 viewportSize = (uint2)(get_global_size(0), get_global_size(1)); 
@@ -23,11 +18,5 @@ kernel void emitInitialRays(
 	float3 direction = normalize(pWorld.xyz - viewParam->cameraPos.xyz);
 	float3 origin = pWorld.xyz;
 
-	rayOriginX[linid] = origin.x;
-	rayOriginY[linid] = origin.y;
-	rayOriginZ[linid] = origin.z;
-
-	rayDirectionX[linid] = direction.x;
-	rayDirectionY[linid] = direction.y;
-	rayDirectionZ[linid] = direction.z;
+	rays[linid] = makeRay(origin, direction);
 }

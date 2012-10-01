@@ -1,12 +1,7 @@
 #include "C:\Users\zhaoz3\Documents\lightway2\lightwayrt\python\shared.h"
 kernel void intersectShadow(
 	const global Scene* scene,
-	const global float* rayOriginX,
-	const global float* rayOriginY,
-	const global float* rayOriginZ,
-	const global float* rayDirectionX,
-	const global float* rayDirectionY,
-	const global float* rayDirectionZ,	
+	const global Ray* rays,
 	const global float* tExpected,
 	global uint* obstructed)
 {
@@ -14,10 +9,7 @@ kernel void intersectShadow(
 	uint2 viewportSize = (uint2)(get_global_size(0), get_global_size(1)); 
 	uint linid = pixelXy.x + pixelXy.y * viewportSize.x;
 
-	float3 origin = (float3)(rayOriginX[linid], rayOriginY[linid], rayOriginZ[linid]);
-	float3 direction = (float3)(rayDirectionX[linid], rayDirectionY[linid], rayDirectionZ[linid]);
-
-	Ray ray = makeRay(origin, direction);
+	Ray ray = rays[linid];
 
 	Hit hit;
 	if(intersectAllGeomG(&ray, scene, &hit) && 

@@ -88,9 +88,10 @@ Ray makeRay(float3 origin, float3 direction)
 	ray.direction = direction;
 	return ray;
 }
-
+#define INVALID_MATERIAL_ID -1
 bool intersectInfiniteHorizontalPlaneG(Ray* this, const global InfiniteHorizontalPlane* plane, Hit* hit)
 {
+	hit->materialId = INVALID_MATERIAL_ID;
 	float3 p0 = (float3)(0, plane->y, 0);
 	float3 l0 = this->origin;
 	float3 n = (float3)(0, -1, 0);
@@ -108,6 +109,7 @@ bool intersectInfiniteHorizontalPlaneG(Ray* this, const global InfiniteHorizonta
 }
 bool intersectSphereG(Ray* this, const global Sphere* sphere, Hit* hit)
 {	
+	hit->materialId = INVALID_MATERIAL_ID;
 	float3 l = this->origin - sphere->origin;
 	float a = 1;
 	float b = 2*dot(this->direction, l);
@@ -142,6 +144,7 @@ bool intersectSphereG(Ray* this, const global Sphere* sphere, Hit* hit)
 }
 bool intersectInfiniteHorizontalPlane(Ray* this, InfiniteHorizontalPlane* plane, Hit* hit)
 {
+	hit->materialId = INVALID_MATERIAL_ID;
 	float3 p0 = (float3)(0, plane->y, 0);
 	float3 l0 = this->origin;
 	float3 n = (float3)(0, -1, 0);
@@ -159,6 +162,8 @@ bool intersectInfiniteHorizontalPlane(Ray* this, InfiniteHorizontalPlane* plane,
 }
 bool intersectSphere(Ray* this, Sphere* sphere, Hit* hit)
 {	
+
+	hit->materialId = INVALID_MATERIAL_ID;
 	float3 l = this->origin - sphere->origin;
 	float a = 1;
 	float b = 2*dot(this->direction, l);
