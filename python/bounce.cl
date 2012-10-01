@@ -32,22 +32,26 @@ kernel void bounce(
 	uint2 pixelXy = (uint2)(get_global_id(0), get_global_id(1));
 	uint2 viewportSize = (uint2)(get_global_size(0), get_global_size(1));
 	uint linid = pixelXy.x + pixelXy.y * viewportSize.x;
+
+	float3 value = 0;//vload4(linid, color).xyz;
+
 	if(materialId[linid] == -1) //hit nothing
 	{
+		vstore4((float4)(value, 1), linid, color);
 		return;
 	}
-	
+
 	Hit hit;
 	hit.normal = (float3)(normalX[linid], normalY[linid], normalZ[linid]);	
 	hit.position = (float3)(positionX[linid], positionY[linid], positionZ[linid]);;
-	hit.materialId = materialId[linid];
+	hit.materialId = materialId[linid];		
 	float3 throughputVal = (float3)(throughputR[linid], throughputG[linid], throughputB[linid]);
-	if(obstructed[linid] == 0)
+
+	if(obstructed[linid] != 1)
 	{		
-		float3 value = throughputVal * brdf(&hit) * M_PI_F; //normalization doesn't look right
-		//TODO: This isn't right
-		vstore4((float4)(value, 1) + vload4(linid, color), linid, color);
+		value += throughputVal * brdf(&hit) * M_PI_F; //normalization doesn't look right
 	}
+	vstore4((float4)(value, 1), linid, color);
 
 	float2 u = rand2(pixelXy.x + pixelXy.y * viewportSize.x, 
 		(uint2)(bounceParams->bounceIdx, bounceParams->iterationIdx));
@@ -74,6 +78,7 @@ kernel void bounce(
 }
 
 kernel void bounceFinal(
+	constant BounceParams* bounceParams,
 	const global uint* obstructed,
 	const global float* normalX,
 	const global float* normalY,
@@ -81,22 +86,22 @@ kernel void bounceFinal(
 	const global float* positionX, 
 	const global float* positionY,
 	const global float* positionZ,
-	const global uint* materialId,	
-	const global float* throughputR, //read write
-	const global float* throughputG, //read write
-	const global float* throughputB, //read write
-
+	const global int* materialId,	
+	const global float* throughputR,
+	const global float* throughputG,
+	const global float* throughputB,
+	const global float* iteration_color,
 	global float* color)
 {	 
 
 	uint2 pixelXy = (uint2)(get_global_id(0), get_global_id(1));
-	uint2 viewportSize = (uint2)(get_global_size(0), get_global_size);
+	uint2 viewportSize = (uint2)(get_global_size(0), get_global_size(1));
 	uint linid = pixelXy.x + pixelXy.y * viewportSize.x;
 
-	float3 value;
+	float3 bounceValue;
 	if(materialId[linid] == -1 || obstructed[linid] == 1) //hit nothing
 	{
-		value = 0;
+		bounceValue = 0;
 	}
 	else
 	{	
@@ -105,9 +110,15 @@ kernel void bounceFinal(
 		hit.position = (float3)(positionX[linid], positionY[linid], positionZ[linid]);;
 		hit.materialId = materialId[linid];
 		float3 throughputVal = (float3)(throughputR[linid], throughputG[linid], throughputB[linid]);
-		value = throughputVal * brdf(&hit) * M_PI_F; //normalization doesn't look right
+		bounceValue = throughputVal * brdf(&hit) * M_PI_F; //normalization doesn't look right
 	}
-	value = value / (1 + value);
+	float4 iteration = (float4)(bounceValue, 1) + vload4(linid, iteration_color);
+	iteration = iteration / (1 + iteration);
+	float4 existing = vload4(linid, color);
+
+	float iterationRatio = 1 / (1 + bounceParams->iterationIdx);
+	float4 composite = existing * (1-iterationRatio) + iteration * (iterationRatio);
+
 	//TODO: This isn't right
-	vstore4((float4)(value, 1), linid, color);
+	vstore4(iteration, linid, color);
 }

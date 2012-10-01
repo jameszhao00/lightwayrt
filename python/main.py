@@ -194,8 +194,12 @@ def test_cl():
     viewParams = struct.pack('4f16f16f', *viewParamsData)
     viewParams_buf = cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=viewParams)
 
-    dest = np.ndarray((1000, 1000, 4), dtype=np.float32)    
+    dest = np.zeros((1000, 1000, 4), dtype=np.float32)    
     dest_buf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, dest.nbytes)
+
+    iterationDest = np.ndarray((1000, 1000, 4), dtype=np.float32)    
+    iterationDest_buf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, iterationDest.nbytes)
+
     vpshape = (dest.shape[0], dest.shape[1])
     linshape = (vpshape[0] * vpshape[1], 1)
 
@@ -226,30 +230,55 @@ def test_cl():
     #   intersect shadow rays
     #   bounce
 
-    #setup opencl
-    #run kernel
+    totalBounces = 1
+
     buildScene_evt = buildSceneProg.buildScene(queue, (1, 1), None,
         *together(sceneBuf))
 
+
+
+    bounceParams = struct.pack('ii', 0, 0)
+    bounceParamsBuf = cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=bounceParams)
+
+
     emitInitialRays_evt = emitInitialRaysProg.emitInitialRays(queue, vpshape, None, 
-        *together(viewParams_buf, lightRayPositionBufs, lightRayDirectionBufs))
+        *together(viewParams_buf, lightRayPositionBufs, lightRayDirectionBufs, iterationDest_buf))
 
-    intersect_evt = intersectProg.intersect(queue, vpshape, None, 
-        *together(sceneBuf, lightRayPositionBufs, lightRayDirectionBufs, hitNormalBufs, hitPositionBufs, materialIdBuf))
 
-    genShadowRay_evt = genShadowRaysProg.genShadowRay(queue, vpshape, None, 
-        *together(hitPositionBufs, shadowRayPositionBufs, shadowRayDirectionBufs, expectedTBuf))
+    for bounceIdx in range(0, totalBounces):
 
-    intersectShadow_evt = intersectShadowProg.intersectShadow(queue, vpshape, None, 
-        *together(sceneBuf, shadowRayPositionBufs, shadowRayDirectionBufs, expectedTBuf, obstructedBuf))
+        bounceParams = struct.pack('ii', 0, bounceIdx)
+        cl.enqueue_write_buffer(queue, bounceParamsBuf, bounceParams)
 
+        intersect_evt = intersectProg.intersect(queue, vpshape, None, 
+            *together(sceneBuf, lightRayPositionBufs, lightRayDirectionBufs, hitNormalBufs, hitPositionBufs, materialIdBuf))
+
+        genShadowRay_evt = genShadowRaysProg.genShadowRay(queue, vpshape, None, 
+            *together(hitPositionBufs, shadowRayPositionBufs, shadowRayDirectionBufs, expectedTBuf))
+
+        intersectShadow_evt = intersectShadowProg.intersectShadow(queue, vpshape, None, 
+            *together(sceneBuf, shadowRayPositionBufs, shadowRayDirectionBufs, expectedTBuf, obstructedBuf))
+
+        if bounceIdx < totalBounces - 1:
+            print 'nonfinal'
+            bounceFinal_evt = bounceProg.bounce(queue, vpshape, None,
+                *together(bounceParamsBuf, obstructedBuf, hitNormalBufs, 
+                hitPositionBufs, materialIdBuf, lightRayPositionBufs, lightRayDirectionBufs,  
+                throughputBufs, iterationDest_buf))
+
+    bounceParams = struct.pack('ii', 0, bounceIdx - 1)
+    cl.enqueue_write_buffer(queue, bounceParamsBuf, bounceParams)
+    print 'final'
     bounceFinal_evt = bounceProg.bounceFinal(queue, vpshape, None,
-        *together(obstructedBuf, hitNormalBufs, hitPositionBufs, materialIdBuf, throughputBufs, dest_buf))
+        *together(bounceParamsBuf, obstructedBuf, hitNormalBufs, 
+            hitPositionBufs, materialIdBuf, throughputBufs, iterationDest_buf, dest_buf))
+    
 
     debug = np.zeros(vpshape, dtype=np.float32)
     queue.finish()
     cl.enqueue_read_buffer(queue, dest_buf, dest).wait()
     #cl.enqueue_read_buffer(queue, hitNormalBufs[1], debug).wait()q
+    '''
     profileEvents = {
         'buildScene': buildScene_evt,
         'emitInitialRays': emitInitialRays_evt,
@@ -266,6 +295,7 @@ def test_cl():
         totalTime += time
         print name, time , 'ms'
     print 'total time', totalTime
+    '''
 
     #return debug
     return dest
