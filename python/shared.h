@@ -37,15 +37,26 @@ typedef struct
 } Material;
 
 
+
 Material getMaterial(int materialId)
 {
-	const Material materials[4] = {
-		{(float3)(.7, .8, .6)},
-		{(float3)(.4, .5, .8)},
-		{(float3)(.8, .1, .2)},
-		{(float3)(.7, .7,.7)}
-	};
-	return materials[materialId];
+	if(materialId == 0) 
+	{
+		return (Material){(float3)(.7, .8, .6)};
+	}
+	else if(materialId == 1)
+	{
+		return (Material){(float3)(.4, .5, .8)};
+	}
+	else if(materialId == 2)
+	{
+		return (Material){(float3)(.8, .1, .2)};
+	}
+	else if(materialId == 3)
+	{
+		return (Material){(float3)(.7, .7,.7)};
+	}
+	return (Material){(float3)(1, 0, 0)};
 }
 typedef struct
 {
@@ -76,6 +87,58 @@ Ray makeRay(float3 origin, float3 direction)
 	ray.origin = origin;
 	ray.direction = direction;
 	return ray;
+}
+
+bool intersectInfiniteHorizontalPlaneG(Ray* this, const global InfiniteHorizontalPlane* plane, Hit* hit)
+{
+	float3 p0 = (float3)(0, plane->y, 0);
+	float3 l0 = this->origin;
+	float3 n = (float3)(0, -1, 0);
+	float3 l = this->direction;
+	float d = dot(p0 - l0, n) / dot(l, n);
+	if(d > 0)
+	{
+		hit->normal = -n;
+		hit->position = l0 + d * l;
+		hit->t = d;
+		hit->materialId = plane->materialId;
+		return true;
+	}
+	return false;
+}
+bool intersectSphereG(Ray* this, const global Sphere* sphere, Hit* hit)
+{	
+	float3 l = this->origin - sphere->origin;
+	float a = 1;
+	float b = 2*dot(this->direction, l);
+	float c = dot(l, l)-sphere->radius*sphere->radius;
+
+	float discriminant = b*b - 4*a*c;
+	if(discriminant > 0)
+	{
+		float t0 = (-b-sqrt(discriminant))/(2*a);
+		float t1 = (-b+sqrt(discriminant))/(2*a);
+		if(t0 > 0 || t1 > 0)
+		{
+			float t0_clamped = t0 < 0 ? 100000000 : t0;
+			float t1_clamped = t1 < 0 ? 100000000 : t1;
+
+			float t = min(t0_clamped, t1_clamped);
+
+
+			float3 hit_pos = t * this->direction + this->origin;
+			float3 normal = normalize(hit_pos - sphere->origin);		
+			//don't do normal <-> ray direction check	
+			
+			hit->normal = normal;
+			hit->position = hit_pos;
+			hit->materialId = sphere->materialId;
+			hit->t = t;
+			return true;	
+			
+		}
+	}
+	return false;
 }
 bool intersectInfiniteHorizontalPlane(Ray* this, InfiniteHorizontalPlane* plane, Hit* hit)
 {
@@ -136,7 +199,12 @@ float3 brdf(Hit* hit)
 	float3 ndotl = dot(hit->normal, lightDir);
 	return getMaterial(hit->materialId).albedo * saturate3(ndotl);
 }
-
+float3 brdf2(float3 position, float3 normal, int materialId)
+{
+	float3 lightDir = normalize(LIGHT_POS - position);
+	float3 ndotl = dot(normal, lightDir);
+	return getMaterial(materialId).albedo * saturate3(ndotl);
+}
 #define RED (float3)(1, 0, 0)
 #define HIT_NEXT_RAY_EPSILON 0.0001f
 #define SHADOW_RAY_EPSILON 0.00001f
@@ -148,6 +216,7 @@ typedef struct {
 	Sphere sphere[NUM_SPHERES];
 	InfiniteHorizontalPlane infHorizPlanes[NUM_INF_HORIZ_PLANES];
 } Scene;
+
 bool intersectAllGeom(Ray* ray, Scene* scene, Hit* hit)
 {
 	bool hasHit = false;
@@ -166,6 +235,34 @@ bool intersectAllGeom(Ray* ray, Scene* scene, Hit* hit)
 	{
 		Hit tempHit;
 		if(intersectInfiniteHorizontalPlane(ray, &scene->infHorizPlanes[i], &tempHit)
+			&& (!hasHit || hit->t > tempHit.t))
+		{
+			hasHit = true;
+			*hit = tempHit;				
+		}
+	}
+	
+	return hasHit;
+}
+
+bool intersectAllGeomG(Ray* ray, const global Scene* scene, Hit* hit)
+{
+	bool hasHit = false;
+	for(int i = 0; i < NUM_SPHERES; i++)
+	{
+		Hit tempHit;
+		if(intersectSphereG(ray, &scene->sphere[i], &tempHit)
+			&& (!hasHit || (hit->t > tempHit.t)))
+		{
+			hasHit = true;
+			*hit = tempHit;				
+		}
+	}
+	
+	for(int i = 0; i < NUM_INF_HORIZ_PLANES; i++)
+	{
+		Hit tempHit;
+		if(intersectInfiniteHorizontalPlaneG(ray, &scene->infHorizPlanes[i], &tempHit)
 			&& (!hasHit || hit->t > tempHit.t))
 		{
 			hasHit = true;
@@ -224,21 +321,3 @@ typedef struct {
 	f4x4 invView;
 	f4x4 invProj;
 } ViewParams;
-
-void initScene(Scene* scene)
-{
-	scene->sphere[0].origin = (float3)(0, .6, 3);
-	scene->sphere[0].radius = .7;
-	scene->sphere[0].materialId = 0;
-	
-	scene->sphere[1].origin = (float3)(-1, .5, 3);
-	scene->sphere[1].radius = .25;
-	scene->sphere[1].materialId = 1;
-
-	scene->sphere[2].origin = (float3)(-1, -1, 3);
-	scene->sphere[2].radius = 1;
-	scene->sphere[2].materialId = 2;
-
-	scene->infHorizPlanes[0].y = -1;
-	scene->infHorizPlanes[0].materialId = 3;
-}

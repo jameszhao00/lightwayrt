@@ -1,5 +1,6 @@
 #include "C:\Users\zhaoz3\Documents\lightway2\lightwayrt\python\shared.h"
 kernel void intersect(
+	const global Scene* scene,
 	const global float* rayOriginX,
 	const global float* rayOriginY,
 	const global float* rayOriginZ,
@@ -23,11 +24,9 @@ kernel void intersect(
 	float3 direction = (float3)(rayDirectionX[linid], rayDirectionY[linid], rayDirectionZ[linid]);
 
 	Ray ray = makeRay(origin, direction);
-	Scene scene;
-	initScene(&scene);
 
 	Hit hit;
-	if(intersectAllGeom(&ray, &scene, &hit))
+	if(intersectAllGeomG(&ray, scene, &hit))
 	{
 		normalX[linid] = hit.normal.x;
 		normalY[linid] = hit.normal.y;

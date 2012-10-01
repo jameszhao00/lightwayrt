@@ -177,6 +177,7 @@ def test_cl():
 
     #print 'ctx', ctx
     queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_ENABLE)
+    buildSceneProg = loadProgram('buildScene.cl', ctx)
     emitInitialRaysProg = loadProgram('emitInitialRays.cl', ctx)
     intersectProg = loadProgram('intersect.cl', ctx)
     genShadowRaysProg = loadProgram('genShadowRay.cl', ctx)
@@ -197,6 +198,8 @@ def test_cl():
     dest_buf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, dest.nbytes)
     vpshape = (dest.shape[0], dest.shape[1])
     linshape = (vpshape[0] * vpshape[1], 1)
+
+    sceneBuf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, 4 * (3*(5) + 1*(2))) # hard coded buffer size
 
     numPixels = 1000 * 1000
     lightRayPositionBufs = float3buf(numPixels, ctx)
@@ -225,25 +228,30 @@ def test_cl():
 
     #setup opencl
     #run kernel
+    buildScene_evt = buildSceneProg.buildScene(queue, (1, 1), None,
+        *together(sceneBuf))
+
     emitInitialRays_evt = emitInitialRaysProg.emitInitialRays(queue, vpshape, None, 
         *together(viewParams_buf, lightRayPositionBufs, lightRayDirectionBufs))
 
     intersect_evt = intersectProg.intersect(queue, vpshape, None, 
-        *together(lightRayPositionBufs, lightRayDirectionBufs, hitNormalBufs, hitPositionBufs, materialIdBuf))
+        *together(sceneBuf, lightRayPositionBufs, lightRayDirectionBufs, hitNormalBufs, hitPositionBufs, materialIdBuf))
 
     genShadowRay_evt = genShadowRaysProg.genShadowRay(queue, vpshape, None, 
         *together(hitPositionBufs, shadowRayPositionBufs, shadowRayDirectionBufs, expectedTBuf))
 
     intersectShadow_evt = intersectShadowProg.intersectShadow(queue, vpshape, None, 
-        *together(shadowRayPositionBufs, shadowRayDirectionBufs, expectedTBuf, obstructedBuf))
+        *together(sceneBuf, shadowRayPositionBufs, shadowRayDirectionBufs, expectedTBuf, obstructedBuf))
 
     bounceFinal_evt = bounceProg.bounceFinal(queue, vpshape, None,
         *together(obstructedBuf, hitNormalBufs, hitPositionBufs, materialIdBuf, throughputBufs, dest_buf))
 
     debug = np.zeros(vpshape, dtype=np.float32)
+    queue.finish()
     cl.enqueue_read_buffer(queue, dest_buf, dest).wait()
     #cl.enqueue_read_buffer(queue, hitNormalBufs[1], debug).wait()q
     profileEvents = {
+        'buildScene': buildScene_evt,
         'emitInitialRays': emitInitialRays_evt,
         'intersect': intersect_evt,
         'genShadowRay': genShadowRay_evt,
