@@ -22,6 +22,9 @@ kernel void genShadowRay(
 	float3 rayDirection = normalize(LIGHT_POS - position);
 	float3 rayOrigin = position + rayDirection * HIT_NEXT_RAY_EPSILON;
 
+	//take into account epsilon
+	tExpected[linid] = length(LIGHT_POS - rayOrigin);
+	
 	rayOriginX[linid] = rayOrigin.x;
 	rayOriginY[linid] = rayOrigin.y;
 	rayOriginZ[linid] = rayOrigin.z;
@@ -30,6 +33,4 @@ kernel void genShadowRay(
 	rayDirectionY[linid] = rayDirection.y;
 	rayDirectionZ[linid] = rayDirection.z;
 
-	//take into account epsilon
-	tExpected[linid] = length(LIGHT_POS - rayOrigin);
 }
