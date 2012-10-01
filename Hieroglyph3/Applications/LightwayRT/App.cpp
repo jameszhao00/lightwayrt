@@ -46,7 +46,7 @@ App::App() : m_numFrames(0)
 //--------------------------------------------------------------------------------
 bool App::ConfigureEngineComponents()
 {
-	m_width = 1600;
+	m_width = 1000;
 	m_height = 1000;
 	bool windowed = true;
 
@@ -252,7 +252,7 @@ void App::Update()
 	glm::mul(m, glm::vec4(0, 0, 1, 0));
 	auto invProj = glm::value_ptr(glm::inverse(glm::perspective(45.f, m_width / (float)m_height, 1.f, 1000.f)));
 
-	m_pWindow->SetCaption(ToString(pos[0]) + L", " + ToString(pos[1]) + L", " + ToString(pos[2]));
+	m_pWindow->SetCaption(L"Frame " + ToString(m_numFrames));
 
 	m_numFrames++;
 	if(m_camera->pollMoved())

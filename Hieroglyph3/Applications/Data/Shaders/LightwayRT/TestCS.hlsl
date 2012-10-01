@@ -23,7 +23,7 @@ cbuffer MC
 #define size_x 32
 #define size_y 32
 
-#define VIEWPORT_W 1600
+#define VIEWPORT_W 1000
 #define VIEWPORT_H 1000
 
 struct Material
@@ -188,10 +188,10 @@ bool intersectAllGeom(Ray ray, out Hit hit)
 		}
 	}
 		
-	for(int i = 0; i < NUM_INF_HORIZ_PLANES; i++)
+	for(int i2 = 0; i2 < NUM_INF_HORIZ_PLANES; i2++)
 	{
 		Hit tempHit = (Hit)0;
-		if(ray.intersectInfiniteHorizontalPlane(infHorizPlanes[i], tempHit)
+		if(ray.intersectInfiniteHorizontalPlane(infHorizPlanes[i2], tempHit)
 			&& (!hasHit || hit.t > tempHit.t))
 		{
 			hasHit = true;
@@ -223,12 +223,11 @@ void CSMAIN( uint3 GroupID : SV_GroupID, uint3 DispatchThreadID : SV_DispatchThr
 	float2 seed = ndc.xy * 0.5 + 1;
 	Rand rand = Rand::make(seed.xy * seed.yx + g_time_sampleCount.x);
 	
-	[loop]
 	for(int bounceIdx = 0; bounceIdx < NUM_BOUNCES; bounceIdx++)
 	{
 		Hit hit = (Hit)0;
 		bool hasHit = intersectAllGeom(ray, hit);
-		[branch]
+
 		if(hasHit)
 		{
 			float3 lightDir = normalize(lightPos - hit.position);
