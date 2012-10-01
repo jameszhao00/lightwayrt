@@ -172,7 +172,7 @@ def together(*el):
         else:
             final.append(x)
     return final
-def test_cl():
+def test_cl(maxIterations):
     ctx = cl.create_some_context()#(interactive=False)
 
     #print 'ctx', ctx
@@ -230,7 +230,7 @@ def test_cl():
     #   intersect shadow rays
     #   bounce
 
-    totalBounces = 1
+    totalBounces = 3
 
     buildScene_evt = buildSceneProg.buildScene(queue, (1, 1), None,
         *together(sceneBuf))
@@ -241,41 +241,41 @@ def test_cl():
     bounceParamsBuf = cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=bounceParams)
 
 
-    emitInitialRays_evt = emitInitialRaysProg.emitInitialRays(queue, vpshape, None, 
-        *together(viewParams_buf, lightRayPositionBufs, lightRayDirectionBufs, iterationDest_buf))
+    for iterationIdx in range(0, maxIterations):
+        print 'iteration', iterationIdx
 
+        emitInitialRays_evt = emitInitialRaysProg.emitInitialRays(queue, vpshape, None, 
+            *together(viewParams_buf, lightRayPositionBufs, lightRayDirectionBufs, 
+                iterationDest_buf, throughputBufs))
+        for bounceIdx in range(0, totalBounces):
 
-    for bounceIdx in range(0, totalBounces):
+            bounceParams = struct.pack('ii', iterationIdx, bounceIdx)
+            cl.enqueue_write_buffer(queue, bounceParamsBuf, bounceParams)
 
-        bounceParams = struct.pack('ii', 0, bounceIdx)
+            intersect_evt = intersectProg.intersect(queue, vpshape, None, 
+                *together(sceneBuf, lightRayPositionBufs, lightRayDirectionBufs, hitNormalBufs, hitPositionBufs, materialIdBuf))
+
+            genShadowRay_evt = genShadowRaysProg.genShadowRay(queue, vpshape, None, 
+                *together(hitPositionBufs, shadowRayPositionBufs, shadowRayDirectionBufs, expectedTBuf))
+
+            intersectShadow_evt = intersectShadowProg.intersectShadow(queue, vpshape, None, 
+                *together(sceneBuf, shadowRayPositionBufs, shadowRayDirectionBufs, expectedTBuf, obstructedBuf))
+
+            if bounceIdx < totalBounces - 1:
+                bounceFinal_evt = bounceProg.bounce(queue, vpshape, None,
+                    *together(bounceParamsBuf, obstructedBuf, hitNormalBufs, 
+                    hitPositionBufs, materialIdBuf, lightRayPositionBufs, lightRayDirectionBufs,  
+                    throughputBufs, iterationDest_buf))
+
+        bounceParams = struct.pack('ii', iterationIdx, totalBounces - 1)
         cl.enqueue_write_buffer(queue, bounceParamsBuf, bounceParams)
-
-        intersect_evt = intersectProg.intersect(queue, vpshape, None, 
-            *together(sceneBuf, lightRayPositionBufs, lightRayDirectionBufs, hitNormalBufs, hitPositionBufs, materialIdBuf))
-
-        genShadowRay_evt = genShadowRaysProg.genShadowRay(queue, vpshape, None, 
-            *together(hitPositionBufs, shadowRayPositionBufs, shadowRayDirectionBufs, expectedTBuf))
-
-        intersectShadow_evt = intersectShadowProg.intersectShadow(queue, vpshape, None, 
-            *together(sceneBuf, shadowRayPositionBufs, shadowRayDirectionBufs, expectedTBuf, obstructedBuf))
-
-        if bounceIdx < totalBounces - 1:
-            print 'nonfinal'
-            bounceFinal_evt = bounceProg.bounce(queue, vpshape, None,
-                *together(bounceParamsBuf, obstructedBuf, hitNormalBufs, 
-                hitPositionBufs, materialIdBuf, lightRayPositionBufs, lightRayDirectionBufs,  
-                throughputBufs, iterationDest_buf))
-
-    bounceParams = struct.pack('ii', 0, bounceIdx - 1)
-    cl.enqueue_write_buffer(queue, bounceParamsBuf, bounceParams)
-    print 'final'
-    bounceFinal_evt = bounceProg.bounceFinal(queue, vpshape, None,
-        *together(bounceParamsBuf, obstructedBuf, hitNormalBufs, 
-            hitPositionBufs, materialIdBuf, throughputBufs, iterationDest_buf, dest_buf))
+        bounceFinal_evt = bounceProg.bounceFinal(queue, vpshape, None,
+            *together(bounceParamsBuf, obstructedBuf, hitNormalBufs, 
+                hitPositionBufs, materialIdBuf, throughputBufs, iterationDest_buf, dest_buf))
+        queue.finish()
     
 
     debug = np.zeros(vpshape, dtype=np.float32)
-    queue.finish()
     cl.enqueue_read_buffer(queue, dest_buf, dest).wait()
     #cl.enqueue_read_buffer(queue, hitNormalBufs[1], debug).wait()q
     '''
@@ -301,5 +301,5 @@ def test_cl():
     return dest
 
 if __name__ == "__main__":
-    test_cl()
+    test_cl(10)
     #p2 = window()

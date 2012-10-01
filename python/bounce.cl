@@ -33,11 +33,11 @@ kernel void bounce(
 	uint2 viewportSize = (uint2)(get_global_size(0), get_global_size(1));
 	uint linid = pixelXy.x + pixelXy.y * viewportSize.x;
 
-	float3 value = 0;//vload4(linid, color).xyz;
+	float3 value = vload4(linid, color).xyz;
 
 	if(materialId[linid] == -1) //hit nothing
 	{
-		vstore4((float4)(value, 1), linid, color);
+		//vstore4((float4)(value, 1), linid, color);
 		return;
 	}
 
@@ -53,7 +53,7 @@ kernel void bounce(
 	}
 	vstore4((float4)(value, 1), linid, color);
 
-	float2 u = rand2(pixelXy.x + pixelXy.y * viewportSize.x, 
+	float2 u = rand2(linid, 
 		(uint2)(bounceParams->bounceIdx, bounceParams->iterationIdx));
 
 	float pdf;
@@ -112,13 +112,12 @@ kernel void bounceFinal(
 		float3 throughputVal = (float3)(throughputR[linid], throughputG[linid], throughputB[linid]);
 		bounceValue = throughputVal * brdf(&hit) * M_PI_F; //normalization doesn't look right
 	}
-	float4 iteration = (float4)(bounceValue, 1) + vload4(linid, iteration_color);
+	float4 iteration = (float4)(bounceValue, 0) + vload4(linid, iteration_color);
 	iteration = iteration / (1 + iteration);
 	float4 existing = vload4(linid, color);
 
-	float iterationRatio = 1 / (1 + bounceParams->iterationIdx);
+	float iterationRatio = 1.f / (1 + bounceParams->iterationIdx);
 	float4 composite = existing * (1-iterationRatio) + iteration * (iterationRatio);
-
 	//TODO: This isn't right
-	vstore4(iteration, linid, color);
+	vstore4((float4)(composite.xyz, 1), linid, color);
 }

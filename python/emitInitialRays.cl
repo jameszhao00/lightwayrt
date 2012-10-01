@@ -8,7 +8,10 @@ kernel void emitInitialRays(
 	global float* rayDirectionX,
 	global float* rayDirectionY,
 	global float* rayDirectionZ,
-	global float* iteration_color)
+	global float* iteration_color,
+	global float* throughputR,
+	global float* throughputG,
+	global float* throughputB)
 {	 
 	
 	uint2 pixelXy = (uint2)(get_global_id(0), get_global_id(1));
@@ -34,5 +37,7 @@ kernel void emitInitialRays(
 	rayDirectionY[linid] = direction.y;
 	rayDirectionZ[linid] = direction.z;
 
-
+	throughputR[linid] = 1;
+	throughputG[linid] = 1;
+	throughputB[linid] = 1;
 }

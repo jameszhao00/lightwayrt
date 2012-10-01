@@ -197,13 +197,13 @@ float3 brdf(Hit* hit)
 {
 	float3 lightDir = normalize(LIGHT_POS - hit->position);
 	float3 ndotl = dot(hit->normal, lightDir);
-	return 5 * getMaterial(hit->materialId).albedo * saturate3(ndotl);
+	return getMaterial(hit->materialId).albedo * saturate3(ndotl);
 }
 float3 brdf2(float3 position, float3 normal, int materialId)
 {
 	float3 lightDir = normalize(LIGHT_POS - position);
 	float3 ndotl = dot(normal, lightDir);
-	return 5 * getMaterial(materialId).albedo * saturate3(ndotl);
+	return getMaterial(materialId).albedo * saturate3(ndotl);
 }
 #define RED (float3)(1, 0, 0)
 #define HIT_NEXT_RAY_EPSILON 0.0001f
