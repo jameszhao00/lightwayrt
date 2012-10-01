@@ -119,7 +119,7 @@ bool intersectSphere(Ray* this, Sphere* sphere, Hit* hit)
 	return false;
 }
 
-#define LIGHT_POS ((float3)(0, 10, 8))
+#define LIGHT_POS ((float3)(0, 10, 0))
 float3 brdf(Hit* hit)
 {
 	float3 lightDir = normalize(LIGHT_POS - hit->position);
