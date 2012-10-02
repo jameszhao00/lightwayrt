@@ -269,7 +269,6 @@ def test_cl(maxIterations):
         bounceFinal_evt = bounceProg.bounceFinal(queue, vpshape, None,
             *together(bounceParamsBuf, obstructedBuf, hitNormalBufs, 
                 hitPositionBufs, materialIdBuf, throughputBufs, iterationDest_buf, dest_buf))
-        queue.finish()
     
 
     debug = np.zeros(vpshape, dtype=np.float32)

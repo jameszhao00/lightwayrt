@@ -48,7 +48,7 @@ kernel void bounce(
 	{		
 		value += throughputVal * (float4)(brdf(&hit), 1) * M_PI_F; //normalization doesn't look right
 	}
-	vstore_half4(value, linid, color);
+	vstore_half4((float4)(value.xyz, 1), linid, color);
 
 	float2 u = rand2(linid, (uint2)(bounceParams->bounceIdx, bounceParams->iterationIdx));
 
@@ -57,7 +57,7 @@ kernel void bounce(
 
 	//TODO: this needs to depend on the brdf!
 	float4 newThroughput = throughputVal * M_PI_F * getMaterial(hit.materialId).albedo.xyzz;
-	vstore_half4(newThroughput, linid, throughput);
+	vstore_half4((float4)(newThroughput.xyz, 1), linid, throughput);
 
 	float3 rayDirection = wiWorld;
 	float3 rayOrigin = hit.position + rayDirection * HIT_NEXT_RAY_EPSILON;
