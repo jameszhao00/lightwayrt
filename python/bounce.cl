@@ -28,7 +28,6 @@ kernel void bounce(
 	global float* throughputB, //read write
 	global float* color)
 {	 
-
 	uint2 pixelXy = (uint2)(get_global_id(0), get_global_id(1));
 	uint2 viewportSize = (uint2)(get_global_size(0), get_global_size(1));
 	uint linid = pixelXy.x + pixelXy.y * viewportSize.x;

@@ -172,8 +172,108 @@ def together(*el):
         else:
             final.append(x)
     return final
+
+def float_aos_test():
+    ctx = cl.create_some_context(interactive=False)
+    queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_ENABLE)
+    half_test_prog = loadProgram('half_test.cl', ctx)
+    kernel_size = 10000
+
+    input_array_floatA = np.array(np.random.random((kernel_size, 1)), dtype=np.float32)
+    input_array_floatB = np.array(np.random.random((kernel_size, 1)), dtype=np.float32)
+    input_array_floatC = np.array(np.random.random((kernel_size, 1)), dtype=np.float32)
+    input_array_floatD = np.array(np.random.random((kernel_size, 1)), dtype=np.float32)
+
+    output_array_float = np.zeros((4 * kernel_size, 1), dtype=np.float32)
+
+    input_buf_floatA = cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=input_array_floatA)
+    input_buf_floatB = cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=input_array_floatB)
+    input_buf_floatC = cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=input_array_floatC)
+    input_buf_floatD = cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=input_array_floatD)
+    
+    output_buf_float = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, output_array_float.nbytes)
+
+    half_test_prog.float_aos_test(queue, (kernel_size, 1), None,
+        input_buf_floatA, input_buf_floatB, input_buf_floatC, input_buf_floatD, output_buf_float)
+    cl.enqueue_read_buffer(queue, output_buf_float, output_array_float).wait()
+
+    return output_array_float
+
+def float_test():
+    ctx = cl.create_some_context(interactive=False)
+    queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_ENABLE)
+    half_test_prog = loadProgram('half_test.cl', ctx)
+    kernel_size = 10000
+
+    input_array_float = np.array(np.random.random((4 * kernel_size, 1)), dtype=np.float32)
+    output_array_float = np.zeros((4 * kernel_size, 1), dtype=np.float32)
+
+    input_buf_float= cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=input_array_float)
+    output_buf_float = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, output_array_float.nbytes)
+
+    half_test_prog.float_test(queue, (kernel_size, 1), None,
+        input_buf_float, output_buf_float)
+    cl.enqueue_read_buffer(queue, output_buf_float, output_array_float).wait()
+
+    return output_array_float
+
+def float3_test():
+    ctx = cl.create_some_context(interactive=False)
+    queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_ENABLE)
+    half_test_prog = loadProgram('half_test.cl', ctx)
+    kernel_size = int(math.ceil(10000 * 4.0 / 3))
+
+    input_array_float = np.array(np.random.random((3 * kernel_size, 1)), dtype=np.float32)
+    output_array_float = np.zeros((3 * kernel_size, 1), dtype=np.float32)
+
+    input_buf_float= cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=input_array_float)
+    output_buf_float = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, output_array_float.nbytes)
+
+    half_test_prog.float3_test(queue, (kernel_size, 1), None,
+        input_buf_float, output_buf_float)
+    cl.enqueue_read_buffer(queue, output_buf_float, output_array_float).wait()
+
+    return output_array_float
+
+def half3_test():
+    ctx = cl.create_some_context(interactive=False)
+    queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_ENABLE)
+    half_test_prog = loadProgram('half_test.cl', ctx)
+    kernel_size = int(math.ceil(10000 * 4.0 / 3))
+
+    input_array_half = np.array(np.random.random((3 * kernel_size, 1)), dtype=np.float16)
+    output_array_half = np.zeros((3 * kernel_size, 1), dtype=np.float16)
+
+    input_buf_half = cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=input_array_half)
+    output_buf_half = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, output_array_half.nbytes)
+
+    half_test_prog.half3_test(queue, (kernel_size, 1), None,
+        input_buf_half, output_buf_half)
+    cl.enqueue_read_buffer(queue, output_buf_half, output_array_half).wait()
+
+    return output_array_half
+
+def half_test():
+    ctx = cl.create_some_context(interactive=False)
+    queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_ENABLE)
+    half_test_prog = loadProgram('half_test.cl', ctx)
+    kernel_size = 10000
+
+    input_array_half = np.array(np.random.random((4 * kernel_size, 1)), dtype=np.float16)
+    output_array_half = np.zeros((4 * kernel_size, 1), dtype=np.float16)
+
+    input_buf_half = cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=input_array_half)
+    output_buf_half = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, output_array_half.nbytes)
+
+    half_test_prog.half_test(queue, (kernel_size, 1), None,
+        input_buf_half, output_buf_half)
+    cl.enqueue_read_buffer(queue, output_buf_half, output_array_half).wait()
+
+    return output_array_half
+
+
 def test_cl(maxIterations):
-    ctx = cl.create_some_context()#(interactive=False)
+    ctx = cl.create_some_context()#interactive=False)
 
     #print 'ctx', ctx
     queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_ENABLE)
@@ -301,5 +401,11 @@ def test_cl(maxIterations):
     return dest
 
 if __name__ == "__main__":
-    test_cl(10)
+    #test_cl(100)
+    for i in range(1, 10):
+        print 'half3', len(half3_test())
+        print 'half', len(half_test())
+        print 'float', len(float_test())
+        print 'float3', len(float3_test())
+        print 'aos', len(float_aos_test())
     #p2 = window()
