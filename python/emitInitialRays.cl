@@ -8,16 +8,15 @@ kernel void emitInitialRays(
 	global float* rayDirectionX,
 	global float* rayDirectionY,
 	global float* rayDirectionZ,
-	global float* iteration_color,
-	global float* throughputR,
-	global float* throughputG,
-	global float* throughputB)
+	global half* iteration_color,
+	global half* throughput)
 {	 
 	
 	uint2 pixelXy = (uint2)(get_global_id(0), get_global_id(1));
 	uint2 viewportSize = (uint2)(get_global_size(0), get_global_size(1)); 
-	uint linid = pixelXy.x + pixelXy.y * viewportSize.x;
-	vstore4((float4)(0,0,0,1), linid, iteration_color);
+	uint linid = pixelXy.x + pixelXy.y * viewportSize.x;	
+	vstore_half4((float4)(0,0,0,1), linid, iteration_color);
+	vstore_half4((float4)(1,1,1,1), linid, throughput);
 	
 	float2 ndc = ((convert_float2(pixelXy) / ((float2)(viewportSize.x, viewportSize.y))) - (float2)(0.5, 0.5))
 		* (float2)(2, -2);
@@ -25,19 +24,15 @@ kernel void emitInitialRays(
 	pView /= pView.w;
 	pView.w = 1;
 	float4 pWorld = mul(viewParam->invView, pView);
-	
-	float3 direction = normalize(pWorld.xyz - viewParam->cameraPos.xyz);
 	float3 origin = pWorld.xyz;
-
 	rayOriginX[linid] = origin.x;
 	rayOriginY[linid] = origin.y;
 	rayOriginZ[linid] = origin.z;
 
+	
+	float3 direction = normalize(pWorld.xyz - viewParam->cameraPos.xyz);
 	rayDirectionX[linid] = direction.x;
 	rayDirectionY[linid] = direction.y;
 	rayDirectionZ[linid] = direction.z;
 
-	throughputR[linid] = 1;
-	throughputG[linid] = 1;
-	throughputB[linid] = 1;
 }

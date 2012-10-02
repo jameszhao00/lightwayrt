@@ -22,18 +22,15 @@ kernel void bounce(
 	global float* rayDirectionX,
 	global float* rayDirectionY,
 	global float* rayDirectionZ,
-
-	global float* throughputR, //read write
-	global float* throughputG, //read write
-	global float* throughputB, //read write
-	global float* color)
+	global half* throughput,
+	global half* color)
 {	 
 
 	uint2 pixelXy = (uint2)(get_global_id(0), get_global_id(1));
 	uint2 viewportSize = (uint2)(get_global_size(0), get_global_size(1));
 	uint linid = pixelXy.x + pixelXy.y * viewportSize.x;
 
-	float3 value = vload4(linid, color).xyz;
+	float4 value = vload_half4(linid, color);
 
 	if(materialId[linid] == -1) //hit nothing
 	{
@@ -44,26 +41,24 @@ kernel void bounce(
 	Hit hit;
 	hit.normal = (float3)(normalX[linid], normalY[linid], normalZ[linid]);	
 	hit.position = (float3)(positionX[linid], positionY[linid], positionZ[linid]);;
-	hit.materialId = materialId[linid];		
-	float3 throughputVal = (float3)(throughputR[linid], throughputG[linid], throughputB[linid]);
+	hit.materialId = materialId[linid];	
+	float4 throughputVal = vload_half4(linid, throughput);
 
 	if(obstructed[linid] != 1)
 	{		
-		value += throughputVal * brdf(&hit) * M_PI_F; //normalization doesn't look right
+		value += throughputVal * (float4)(brdf(&hit), 1) * M_PI_F; //normalization doesn't look right
 	}
-	vstore4((float4)(value, 1), linid, color);
+	vstore_half4(value, linid, color);
 
-	float2 u = rand2(linid, 
-		(uint2)(bounceParams->bounceIdx, bounceParams->iterationIdx));
+	float2 u = rand2(linid, (uint2)(bounceParams->bounceIdx, bounceParams->iterationIdx));
 
 	float pdf;
 	float3 wiWorld = sampleCosWeightedHemi(hit.normal, u, &pdf);
 
-	float3 newThroughput = throughputVal * M_PI_F * getMaterial(hit.materialId).albedo;
-	throughputR[linid] = newThroughput.x;
-	throughputG[linid] = newThroughput.y;
-	throughputB[linid] = newThroughput.z;
-	
+	//TODO: this needs to depend on the brdf!
+	float4 newThroughput = throughputVal * M_PI_F * getMaterial(hit.materialId).albedo.xyzz;
+	vstore_half4(newThroughput, linid, throughput);
+
 	float3 rayDirection = wiWorld;
 	float3 rayOrigin = hit.position + rayDirection * HIT_NEXT_RAY_EPSILON;
 
@@ -87,18 +82,16 @@ kernel void bounceFinal(
 	const global float* positionY,
 	const global float* positionZ,
 	const global int* materialId,	
-	const global float* throughputR,
-	const global float* throughputG,
-	const global float* throughputB,
-	const global float* iteration_color,
-	global float* color)
+	const global half* throughput,
+	const global half* iteration_color,
+	global half* color)
 {	 
 
 	uint2 pixelXy = (uint2)(get_global_id(0), get_global_id(1));
 	uint2 viewportSize = (uint2)(get_global_size(0), get_global_size(1));
 	uint linid = pixelXy.x + pixelXy.y * viewportSize.x;
 
-	float3 bounceValue;
+	float4 bounceValue;
 	if(materialId[linid] == -1 || obstructed[linid] == 1) //hit nothing
 	{
 		bounceValue = 0;
@@ -109,15 +102,15 @@ kernel void bounceFinal(
 		hit.normal = (float3)(normalX[linid], normalY[linid], normalZ[linid]);	
 		hit.position = (float3)(positionX[linid], positionY[linid], positionZ[linid]);;
 		hit.materialId = materialId[linid];
-		float3 throughputVal = (float3)(throughputR[linid], throughputG[linid], throughputB[linid]);
-		bounceValue = throughputVal * brdf(&hit) * M_PI_F; //normalization doesn't look right
+		float4 throughputVal = vload_half4(linid, throughput);		
+		bounceValue = throughputVal * (float4)(brdf(&hit), 1) * M_PI_F; //normalization doesn't look right
 	}
-	float4 iteration = (float4)(bounceValue, 0) + vload4(linid, iteration_color);
+	float4 iteration = bounceValue + vload_half4(linid, iteration_color);
 	iteration = iteration / (1 + iteration);
-	float4 existing = vload4(linid, color);
+	float4 existing = vload_half4(linid, color);
 
 	float iterationRatio = 1.f / (1 + bounceParams->iterationIdx);
 	float4 composite = existing * (1-iterationRatio) + iteration * (iterationRatio);
 	//TODO: This isn't right
-	vstore4((float4)(composite.xyz, 1), linid, color);
+	vstore_half4((float4)(composite.xyz, 1), linid, color);
 }

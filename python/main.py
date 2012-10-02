@@ -194,10 +194,10 @@ def test_cl(maxIterations):
     viewParams = struct.pack('4f16f16f', *viewParamsData)
     viewParams_buf = cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=viewParams)
 
-    dest = np.zeros((1000, 1000, 4), dtype=np.float32)    
+    dest = np.zeros((1000, 1000, 4), dtype=np.float16)    
     dest_buf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, dest.nbytes)
 
-    iterationDest = np.ndarray((1000, 1000, 4), dtype=np.float32)    
+    iterationDest = np.ndarray((1000, 1000, 4), dtype=np.float16)    
     iterationDest_buf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, iterationDest.nbytes)
 
     vpshape = (dest.shape[0], dest.shape[1])
@@ -213,11 +213,8 @@ def test_cl(maxIterations):
 
     hitPositionBufs = float3buf(numPixels, ctx)
     hitNormalBufs = float3buf(numPixels, ctx)
-    initialThroughputs = np.ones(linshape, dtype=np.float32)
-    throughputBufs = [
-        cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=initialThroughputs),
-        cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=initialThroughputs),
-        cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=initialThroughputs)]
+    initialThroughputs = np.ones((1000, 1000, 4), dtype=np.float16)
+    throughputBufs = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=initialThroughputs);
 
     expectedTBuf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, numPixels * 4)
     obstructedBuf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, numPixels * 4)
