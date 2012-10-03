@@ -5,8 +5,7 @@ typedef struct {
 	int bounceIdx;
 } BounceParams;
 
-kernel void bounce(
-	constant BounceParams* bounceParams,
+kernel void bounce(	
 	const global uint* obstructed,
 	const global float* normalX,
 	const global float* normalY,
@@ -23,7 +22,8 @@ kernel void bounce(
 	global float* rayDirectionY,
 	global float* rayDirectionZ,
 	global half* throughput,
-	global half* color)
+	global half* color,
+	constant BounceParams* bounceParams)
 {	 
 
 	uint2 pixelXy = (uint2)(get_global_id(0), get_global_id(1));
@@ -71,9 +71,7 @@ kernel void bounce(
 	rayDirectionZ[linid] = rayDirection.z;
 
 }
-
 kernel void bounceFinal(
-	constant BounceParams* bounceParams,
 	const global uint* obstructed,
 	const global float* normalX,
 	const global float* normalY,
@@ -84,7 +82,8 @@ kernel void bounceFinal(
 	const global int* materialId,	
 	const global half* throughput,
 	const global half* iteration_color,
-	global half* color)
+	global float* color,
+	constant BounceParams* bounceParams)
 {	 
 
 	uint2 pixelXy = (uint2)(get_global_id(0), get_global_id(1));
@@ -107,10 +106,23 @@ kernel void bounceFinal(
 	}
 	float4 iteration = bounceValue + vload_half4(linid, iteration_color);
 	iteration = iteration / (1 + iteration);
-	float4 existing = vload_half4(linid, color);
+	float4 existing = vload4(linid, color);
 
 	float iterationRatio = 1.f / (1 + bounceParams->iterationIdx);
 	float4 composite = existing * (1-iterationRatio) + iteration * (iterationRatio);
 	//TODO: This isn't right
-	vstore_half4((float4)(composite.xyz, 1), linid, color);
+	vstore4((float4)(composite.xyz, 1), linid, color);
+
+}
+
+kernel void afterEachBounce(
+	global BounceParams* bounceParams)
+{
+	bounceParams[0].bounceIdx++;	
+}
+kernel void afterFinalBounce(
+	global BounceParams* bounceParams)
+{
+	bounceParams[0].bounceIdx = 0;
+	bounceParams[0].iterationIdx++;
 }

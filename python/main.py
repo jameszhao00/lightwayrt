@@ -11,9 +11,13 @@ import sys
 import glutil
 import struct
 import itertools
+import time
 
 def normalize(v):
     return v / la.norm(v)
+
+def getMS():
+    return int(round(time.time() * 1000))
 
 def look_at(eye, center, up):
     eye = eye if type(eye) is np.array else np.array(eye)
@@ -176,7 +180,7 @@ def test_cl(maxIterations):
     ctx = cl.create_some_context()#(interactive=False)
 
     #print 'ctx', ctx
-    queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_ENABLE)
+    queue = cl.CommandQueue(ctx)
     buildSceneProg = loadProgram('buildScene.cl', ctx)
     emitInitialRaysProg = loadProgram('emitInitialRays.cl', ctx)
     intersectProg = loadProgram('intersect.cl', ctx)
@@ -194,7 +198,7 @@ def test_cl(maxIterations):
     viewParams = struct.pack('4f16f16f', *viewParamsData)
     viewParams_buf = cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=viewParams)
 
-    dest = np.zeros((1000, 1000, 4), dtype=np.float16)    
+    dest = np.zeros((1000, 1000, 4), dtype=np.float32)    
     dest_buf = cl.Buffer(ctx, cl.mem_flags.WRITE_ONLY, dest.nbytes)
 
     iterationDest = np.ndarray((1000, 1000, 4), dtype=np.float16)    
@@ -237,20 +241,23 @@ def test_cl(maxIterations):
     bounceParams = struct.pack('ii', 0, 0)
     bounceParamsBuf = cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=bounceParams)
 
+    print 'iterations', maxIterations
 
     for iterationIdx in range(0, maxIterations):
-        print 'iteration', iterationIdx
 
         emitInitialRays_evt = emitInitialRaysProg.emitInitialRays(queue, vpshape, None, 
             *together(viewParams_buf, lightRayPositionBufs, lightRayDirectionBufs, 
                 iterationDest_buf, throughputBufs))
         for bounceIdx in range(0, totalBounces):
 
-            bounceParams = struct.pack('ii', iterationIdx, bounceIdx)
-            cl.enqueue_write_buffer(queue, bounceParamsBuf, bounceParams)
+            #used by bounce
+            #even if we skil the bounce in the loop, the finalBounce will use it
+            #bounceParams = struct.pack('ii', iterationIdx, bounceIdx)
+            #cl.enqueue_write_buffer(queue, bounceParamsBuf, bounceParams)
 
             intersect_evt = intersectProg.intersect(queue, vpshape, None, 
                 *together(sceneBuf, lightRayPositionBufs, lightRayDirectionBufs, hitNormalBufs, hitPositionBufs, materialIdBuf))
+            
 
             genShadowRay_evt = genShadowRaysProg.genShadowRay(queue, vpshape, None, 
                 *together(hitPositionBufs, shadowRayPositionBufs, shadowRayDirectionBufs, expectedTBuf))
@@ -260,19 +267,28 @@ def test_cl(maxIterations):
 
             if bounceIdx < totalBounces - 1:
                 bounceFinal_evt = bounceProg.bounce(queue, vpshape, None,
-                    *together(bounceParamsBuf, obstructedBuf, hitNormalBufs, 
+                    *together(obstructedBuf, hitNormalBufs, 
                     hitPositionBufs, materialIdBuf, lightRayPositionBufs, lightRayDirectionBufs,  
-                    throughputBufs, iterationDest_buf))
+                    throughputBufs, iterationDest_buf, bounceParamsBuf))
+                bounceProg.afterEachBounce(queue, (1, 1), None,
+                    bounceParamsBuf)
 
-        bounceParams = struct.pack('ii', iterationIdx, totalBounces - 1)
-        cl.enqueue_write_buffer(queue, bounceParamsBuf, bounceParams)
+
+
+        #bounceParams = struct.pack('ii', iterationIdx, totalBounces - 1)
+        #cl.enqueue_write_buffer(queue, bounceParamsBuf, bounceParams)
         bounceFinal_evt = bounceProg.bounceFinal(queue, vpshape, None,
-            *together(bounceParamsBuf, obstructedBuf, hitNormalBufs, 
-                hitPositionBufs, materialIdBuf, throughputBufs, iterationDest_buf, dest_buf))
-    
+            *together(obstructedBuf, hitNormalBufs, 
+                hitPositionBufs, materialIdBuf, throughputBufs, iterationDest_buf, dest_buf,
+                bounceParamsBuf))
 
+        bounceProg.afterFinalBounce(queue, (1, 1), None,
+            bounceParamsBuf)
+    
     debug = np.zeros(vpshape, dtype=np.float32)
+    startTime = getMS()
     cl.enqueue_read_buffer(queue, dest_buf, dest).wait()
+    print 'execution took', getMS() - startTime, 'ms'
     #cl.enqueue_read_buffer(queue, hitNormalBufs[1], debug).wait()q
     '''
     profileEvents = {
@@ -297,5 +313,5 @@ def test_cl(maxIterations):
     return dest
 
 if __name__ == "__main__":
-    test_cl(10)
+    test_cl(50)
     #p2 = window()
