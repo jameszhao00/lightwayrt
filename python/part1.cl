@@ -389,7 +389,7 @@ float3 sampleSphere(float3 incident, float2 u, Sphere* sphere, float* invPdf)
 	return direction * sphere->radius + sphere->origin;
 }
 #define NUM_BOUNCES 4
-#define NUM_ITERATIONS 600
+#define NUM_ITERATIONS 100
 typedef struct {
 	float4 cameraPos;
 	f4x4 invView;
