@@ -34,8 +34,9 @@ float4 mul(f4x4 m, float4 v)
 
 typedef struct
 {
+	float3 emission;
 	float3 albedo;
-	float specPower;
+	bool is_specular;
 } Material;
 typedef struct
 {
@@ -93,9 +94,10 @@ bool intersectSphere(Ray* this, Sphere* sphere, Hit* hit)
 
 	float discriminant = b*b - 4*a*c;
 	if(discriminant > 0)
-	{
-		float t0 = (-b-sqrt(discriminant))/(2*a);
-		float t1 = (-b+sqrt(discriminant))/(2*a);
+	{	
+		float det = sqrt(discriminant);		
+		float t0 = (-b-det) * .5;
+		float t1 = (-b+det) * .5;
 		if(t0 > 0 || t1 > 0)
 		{
 			float t0_clamped = t0 < 0 ? 100000000 : t0;
@@ -119,12 +121,9 @@ bool intersectSphere(Ray* this, Sphere* sphere, Hit* hit)
 	return false;
 }
 
-#define LIGHT_POS ((float3)(0, 10, 8))
 float3 brdf(Hit* hit)
 {
-	float3 lightDir = normalize(LIGHT_POS - hit->position);
-	float3 ndotl = dot(hit->normal, lightDir);
-	return hit->material.albedo * saturate3(ndotl);
+	return hit->material.albedo;
 }
 
 #define RED (float3)(1, 0, 0)
@@ -142,17 +141,22 @@ void initScene(Scene* scene)
 	scene->sphere[0].origin = (float3)(0, .6, 3);
 	scene->sphere[0].radius = .7;
 	scene->sphere[0].material.albedo = (float3)(.7, .8, .6);
+	scene->sphere[0].material.is_specular = false;
 	
 	scene->sphere[1].origin = (float3)(-1, .5, 3);
 	scene->sphere[1].radius = .25;
 	scene->sphere[1].material.albedo = (float3)(.4, .5, .8);
+	scene->sphere[1].material.is_specular = false;
 
 	scene->sphere[2].origin = (float3)(-1, -1, 3);
 	scene->sphere[2].radius = 1;
-	scene->sphere[2].material.albedo = (float3)(.8, .1, .2);
+	scene->sphere[2].material.albedo = (float3)(.5, .5, .5);
+	scene->sphere[2].material.is_specular = true;
 
 	scene->infHorizPlanes[0].y = -1;
 	scene->infHorizPlanes[0].material.albedo = (float3)(.7, .7,.7);
+	scene->infHorizPlanes[0].material.is_specular = false;
+
 }
 bool intersectAllGeom(Ray* ray, Scene* scene, Hit* hit)
 {
@@ -180,6 +184,30 @@ bool intersectAllGeom(Ray* ray, Scene* scene, Hit* hit)
 	}
 	
 	return hasHit;
+}
+
+bool shadowIntersectAllGeom(Ray* ray, Scene* scene, float maxT)
+{
+	for(int i = 0; i < NUM_SPHERES; i++)
+	{
+		Hit tempHit;
+		if(intersectSphere(ray, &scene->sphere[i], &tempHit)
+			&& tempHit.t < maxT)
+		{
+			return true;			
+		}
+	}
+	
+	for(int i = 0; i < NUM_INF_HORIZ_PLANES; i++)
+	{
+		Hit tempHit;
+		if(intersectInfiniteHorizontalPlane(ray, &scene->infHorizPlanes[i], &tempHit)
+			&& tempHit.t < maxT)
+		{
+			return true;		
+		}
+	}
+	return false;
 }
 float2 rand2(uint key, uint2 counter)
 {
@@ -223,6 +251,23 @@ float3 sampleCosWeightedHemi(float3 nWorld, float2 u, float *pdf)
 	*pdf = b / M_PI_F; //cos(acos(sqrt(u.y))) / pi
 	return changeCoordSys(nWorld, (float3)(0, 0, 1), wi);
 }
+//returns r, theta
+float2 sampleDisc(float2 u, float radius)
+{
+	return (float2)(sqrt(u.x), 2 * M_PI_F * u.y);
+}
+//don't think this is actually correct, as you could be really close
+//to the sphere... and pick points that are occluded by the curvature
+float3 sampleSphere(float3 incident, float2 u, Sphere* sphere, float* invPdf)
+{
+	*invPdf = 4 * M_PI_F * sphere->radius * sphere->radius;
+	float xyMultiplier = 2 * sqrt(u.y * (1 - u.y));
+	float inner = 2 * M_PI_F * u.x;
+	float3 direction = (float3)(cos(inner), sin(inner), 1 - 2 * u.y) 
+		* (float3)(xyMultiplier, xyMultiplier, 1);
+	direction = dot(direction, -incident) > 0 ? direction : -direction;
+	return direction * sphere->radius + sphere->origin;
+}
 #define NUM_BOUNCES 3
 #define NUM_ITERATIONS 300
 typedef struct {
@@ -230,13 +275,21 @@ typedef struct {
 	f4x4 invView;
 	f4x4 invProj;
 } ViewParams;
+float3 reflect(float3 normal, float3 incident)
+{
+	return incident - 2 * normal * dot(normal, incident);
+}
 kernel void part1(
 	constant ViewParams* viewParam,
 	global float* color)
 {	 
+
+    int ltid = get_local_id(0) + get_local_size(0) * get_local_id(1);
 	uint2 pixelXy = (uint2)(get_global_id(0), get_global_id(1));
 	uint2 viewportSize = (uint2)(get_global_size(0), get_global_size(1)); 
-
+	Scene scene;
+	initScene(&scene);
+	
 	float2 ndc = ((convert_float2(pixelXy) / ((float2)(viewportSize.x, viewportSize.y))) - (float2)(0.5, 0.5))
 		* (float2)(2, -2);
 	float4 pView = mul(viewParam->invProj, (float4)(ndc, -1, 1));
@@ -247,39 +300,68 @@ kernel void part1(
 	Ray cameraRay;
 	cameraRay.direction = normalize(pWorld.xyz - viewParam->cameraPos.xyz);
 	cameraRay.origin = pWorld.xyz;
-
-	Scene scene;
-	initScene(&scene);
-
+	
+	Sphere light;
+	light.origin = (float3)(0,6,3);
+	light.radius = 1;
+	light.material.emission = 6;
+	
 	float3 value = 0;
 	for(uint iterationIdx = 0; iterationIdx < NUM_ITERATIONS; iterationIdx++)
 	{
 		Ray ray = cameraRay;
 		float3 throughput = 1;
+
 		for(uint bounceIdx = 0; bounceIdx < NUM_BOUNCES; bounceIdx++)
 		{
 			Hit hit;
 			if(intersectAllGeom(&ray, &scene, &hit))
 			{
-				float3 lightDir = normalize(LIGHT_POS - hit.position);
+				float invLightPdf;
+				float3 lightSamplePosition;
+				{
+					float3 lightDir = normalize(light.origin - hit.position);
+					float2 u = rand2(pixelXy.x + pixelXy.y * viewportSize.x, 
+							(uint2)(bounceIdx + NUM_BOUNCES, iterationIdx));
+					lightSamplePosition = sampleSphere(lightDir, u, &light, &invLightPdf);
+				}
+				float3 lightSampleDir = normalize(lightSamplePosition - hit.position);
 				Ray shadowRay = makeRay(
-					hit.position + lightDir * HIT_NEXT_RAY_EPSILON,
-					lightDir);
-				Hit shadowHit;
-				if(!intersectAllGeom(&shadowRay, &scene, &shadowHit))
+					hit.position + lightSampleDir * HIT_NEXT_RAY_EPSILON,
+					lightSampleDir);
+				float shadowMaxT = length(lightSamplePosition - shadowRay.origin);
+				if(!shadowIntersectAllGeom(&shadowRay, &scene, shadowMaxT))
 				{		
-					value += throughput * brdf(&hit) * M_PI_F; //normalization doesn't look right	
+					value += throughput 
+						* light.material.emission
+						* brdf(&hit)
+						* dot(normalize(lightSamplePosition - light.origin), -lightSampleDir)
+						* dot(hit.normal, lightSampleDir) 
+						* invLightPdf
+						/ (shadowMaxT * shadowMaxT);
 				}
 
 				if(bounceIdx < NUM_BOUNCES - 1)
 				{
-					float2 u = rand2(pixelXy.x + pixelXy.y * viewportSize.x, 
-						(uint2)(bounceIdx, iterationIdx));
+					float3 wiWorld;
 
-					float pdf;
-					float3 wiWorld = sampleCosWeightedHemi(hit.normal, u, &pdf);
+					if(hit.material.is_specular)
+					{
+						wiWorld = reflect(hit.normal, ray.direction);
+						throughput *= dot(wiWorld, hit.normal) * hit.material.albedo;
+					}
+					else
+					{				
+						float pdf;		
+						float2 u = rand2(pixelXy.x + pixelXy.y * viewportSize.x, 
+							(uint2)(bounceIdx, iterationIdx));
+						wiWorld = sampleCosWeightedHemi(hit.normal, u, &pdf);
+						//pdf = cos(theta)/pi for diffuse
+						//invPdf = pi / cos(theta)
+						float invPdf = M_PI_F / dot(wiWorld, hit.normal); 
+						throughput *= hit.material.albedo; //pi canceled out (pdf, lambert)
+					}
 
-					throughput *= M_PI_F * hit.material.albedo;
 					
 					ray = makeRay(
 						hit.position + wiWorld * HIT_NEXT_RAY_EPSILON,
