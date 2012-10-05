@@ -163,8 +163,8 @@ def test_cl():
     program = cl.Program(ctx, fstr).build()
     mf = cl.mem_flags
 
-    cameraPos = np.array([0,0,-1,0])
-    invView = la.inv(look_at((0,0, -1), (0,0,100), (0,1,0)))
+    cameraPos = np.array([0,6,-1,0])
+    invView = la.inv(look_at((0,6, -1), (0,1,1), (0,1,0)))
     invProj = la.inv(perspective(60, 1, 1, 1000))
     print 'view', invView
     print 'proj', invProj

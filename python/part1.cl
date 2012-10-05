@@ -31,13 +31,20 @@ float4 mul(f4x4 m, float4 v)
 
 #define VIEWPORT_W 1600
 #define VIEWPORT_H 1000
-
 typedef struct
 {
 	float3 emission;
 	float3 albedo;
 	bool is_specular;
+	bool is_emissive;
 } Material;
+typedef struct
+{
+	float3 origin;
+	float radius;
+	Material material;
+	float height;
+} Ring;
 typedef struct
 {
 	float3 normal;
@@ -83,6 +90,43 @@ bool intersectInfiniteHorizontalPlane(Ray* this, InfiniteHorizontalPlane* plane,
 		hit->material = plane->material;
 		return true;
 	}
+	return false;
+}
+bool intersectRing(Ray* ray, Ring* ring, Hit* hit)
+{
+	float3 rd = ray->direction;
+	float3 ro = ray->origin - ring->origin;
+	float r = ring->radius;
+	float discrim = r * r * dot(rd.xz, rd.xz) 
+		- rd.x * rd.x * ro.z * ro.z 
+		+ 2 * rd.x * rd.z * ro.x * ro.z - rd.z * rd.z * ro.x * ro.x;
+	if(discrim > 0)
+	{
+		float neg_b = - rd.x * ro.x - rd.z * ro.z;
+		float root = sqrt(discrim);
+		float inv = 1/dot(rd.xz, rd.xz);
+
+		float t0 = (neg_b - root) * inv;
+		float t1 = (neg_b + root) * inv;
+
+		bool t0_valid = t0 > 0 && (fabs(ro.y + t0 * ray->direction.y) < ring->height);
+		bool t1_valid = t1 > 0 && (fabs(ro.y + t1 * ray->direction.y) < ring->height);
+
+		if(!t0_valid && !t1_valid)
+		{
+			return false;
+		}
+		float t = min(t0 + (!t0_valid ? 10000 : 0), t1 + (!t1_valid ? 10000 : 0));
+		hit->position = ray->origin + t * ray->direction;
+		bool outside = dot(normalize(hit->position - ring->origin), ray->direction) < 0;
+		hit->normal = (outside ? 1 : -1) 
+			* normalize((float3)(hit->position.xyz - ring->origin.xyz) * (float3)(1,0,1));
+
+		hit->material = ring->material;
+		hit->t = t;
+		return true;
+	}
+	//don't care about glance
 	return false;
 }
 bool intersectSphere(Ray* this, Sphere* sphere, Hit* hit)
@@ -131,10 +175,11 @@ float3 brdf(Hit* hit)
 //LDDE = 2 bounces, LE = 0 bounces, LDDDE = 3 bounces
 #define NUM_SPHERES 3
 #define NUM_INF_HORIZ_PLANES 1
-
+#define NUM_RINGS 1
 typedef struct {
 	Sphere sphere[NUM_SPHERES];
 	InfiniteHorizontalPlane infHorizPlanes[NUM_INF_HORIZ_PLANES];
+	Ring ring[NUM_RINGS];
 } Scene;
 void initScene(Scene* scene)
 {
@@ -142,22 +187,78 @@ void initScene(Scene* scene)
 	scene->sphere[0].radius = .7;
 	scene->sphere[0].material.albedo = (float3)(.7, .8, .6);
 	scene->sphere[0].material.is_specular = false;
+	scene->sphere[0].material.is_emissive = false;
 	
 	scene->sphere[1].origin = (float3)(-1, .5, 3);
 	scene->sphere[1].radius = .25;
 	scene->sphere[1].material.albedo = (float3)(.4, .5, .8);
 	scene->sphere[1].material.is_specular = false;
+	scene->sphere[1].material.is_emissive = false;
 
 	scene->sphere[2].origin = (float3)(-1, -1, 3);
 	scene->sphere[2].radius = 1;
 	scene->sphere[2].material.albedo = (float3)(.5, .5, .5);
 	scene->sphere[2].material.is_specular = true;
+	scene->sphere[2].material.is_emissive = false;
 
 	scene->infHorizPlanes[0].y = -1;
 	scene->infHorizPlanes[0].material.albedo = (float3)(.7, .7,.7);
 	scene->infHorizPlanes[0].material.is_specular = false;
+	scene->infHorizPlanes[0].material.is_emissive = false;
+
+	scene->ring[0].origin = (float3)(0,-.6,3);
+	scene->ring[0].radius = 3;
+	scene->ring[0].material.albedo = 1;
+	scene->ring[0].material.is_specular = true;
+	scene->ring[0].material.is_emissive = false;
+	scene->ring[0].height = .8;
 
 }
+bool intersectAllGeomWithLight(Ray* ray, Scene* scene, Sphere* light, Hit* hit)
+{
+	bool hasHit = false;
+	{
+		Hit tempHit;
+		if(intersectSphere(ray, light, &tempHit) && (!hasHit || (hit->t > tempHit.t)))
+		{
+			hasHit = true;
+			*hit = tempHit;
+		}
+	}
+	for(int i = 0; i < NUM_SPHERES; i++)
+	{
+		Hit tempHit;
+		if(intersectSphere(ray, &scene->sphere[i], &tempHit)
+			&& (!hasHit || (hit->t > tempHit.t)))
+		{
+			hasHit = true;
+			*hit = tempHit;				
+		}
+	}
+	for(int i = 0; i < NUM_RINGS; i++)
+	{
+		Hit tempHit;
+		if(intersectRing(ray, &scene->ring[i], &tempHit)
+			&& (!hasHit || (hit->t > tempHit.t)))
+		{
+			hasHit = true;
+			*hit = tempHit;				
+		}
+	}
+	for(int i = 0; i < NUM_INF_HORIZ_PLANES; i++)
+	{
+		Hit tempHit;
+		if(intersectInfiniteHorizontalPlane(ray, &scene->infHorizPlanes[i], &tempHit)
+			&& (!hasHit || hit->t > tempHit.t))
+		{
+			hasHit = true;
+			*hit = tempHit;				
+		}
+	}
+	
+	return hasHit;
+}
+
 bool intersectAllGeom(Ray* ray, Scene* scene, Hit* hit)
 {
 	bool hasHit = false;
@@ -165,6 +266,16 @@ bool intersectAllGeom(Ray* ray, Scene* scene, Hit* hit)
 	{
 		Hit tempHit;
 		if(intersectSphere(ray, &scene->sphere[i], &tempHit)
+			&& (!hasHit || (hit->t > tempHit.t)))
+		{
+			hasHit = true;
+			*hit = tempHit;				
+		}
+	}
+	for(int i = 0; i < NUM_RINGS; i++)
+	{
+		Hit tempHit;
+		if(intersectRing(ray, &scene->ring[i], &tempHit)
 			&& (!hasHit || (hit->t > tempHit.t)))
 		{
 			hasHit = true;
@@ -192,6 +303,15 @@ bool shadowIntersectAllGeom(Ray* ray, Scene* scene, float maxT)
 	{
 		Hit tempHit;
 		if(intersectSphere(ray, &scene->sphere[i], &tempHit)
+			&& tempHit.t < maxT)
+		{
+			return true;			
+		}
+	}
+	for(int i = 0; i < NUM_RINGS; i++)
+	{
+		Hit tempHit;
+		if(intersectRing(ray, &scene->ring[i], &tempHit)
 			&& tempHit.t < maxT)
 		{
 			return true;			
@@ -268,8 +388,8 @@ float3 sampleSphere(float3 incident, float2 u, Sphere* sphere, float* invPdf)
 	direction = dot(direction, -incident) > 0 ? direction : -direction;
 	return direction * sphere->radius + sphere->origin;
 }
-#define NUM_BOUNCES 3
-#define NUM_ITERATIONS 300
+#define NUM_BOUNCES 4
+#define NUM_ITERATIONS 600
 typedef struct {
 	float4 cameraPos;
 	f4x4 invView;
@@ -302,43 +422,69 @@ kernel void part1(
 	cameraRay.origin = pWorld.xyz;
 	
 	Sphere light;
-	light.origin = (float3)(0,6,3);
-	light.radius = 1;
-	light.material.emission = 6;
-	
+	light.origin = (float3)(6,3,2);
+	light.radius = .6;
+	light.material.is_emissive = true;
+	light.material.emission = 100;
+
+
 	float3 value = 0;
 	for(uint iterationIdx = 0; iterationIdx < NUM_ITERATIONS; iterationIdx++)
 	{
 		Ray ray = cameraRay;
 		float3 throughput = 1;
-
+		bool previousBounceSpecular = false;
 		for(uint bounceIdx = 0; bounceIdx < NUM_BOUNCES; bounceIdx++)
 		{
 			Hit hit;
-			if(intersectAllGeom(&ray, &scene, &hit))
+			bool has_hit;
+			if(previousBounceSpecular || bounceIdx == 0)
 			{
-				float invLightPdf;
-				float3 lightSamplePosition;
+				has_hit = intersectAllGeomWithLight(&ray, &scene, &light, &hit);
+			}
+			else
+			{
+				has_hit = intersectAllGeom(&ray, &scene, &hit);
+			}
+			if(has_hit)
+			{
+				if((previousBounceSpecular || bounceIdx == 0) && hit.material.is_emissive)
 				{
-					float3 lightDir = normalize(light.origin - hit.position);
-					float2 u = rand2(pixelXy.x + pixelXy.y * viewportSize.x, 
-							(uint2)(bounceIdx + NUM_BOUNCES, iterationIdx));
-					lightSamplePosition = sampleSphere(lightDir, u, &light, &invLightPdf);
+					value += throughput * hit.material.emission;
 				}
-				float3 lightSampleDir = normalize(lightSamplePosition - hit.position);
-				Ray shadowRay = makeRay(
-					hit.position + lightSampleDir * HIT_NEXT_RAY_EPSILON,
-					lightSampleDir);
-				float shadowMaxT = length(lightSamplePosition - shadowRay.origin);
-				if(!shadowIntersectAllGeom(&shadowRay, &scene, shadowMaxT))
-				{		
-					value += throughput 
-						* light.material.emission
-						* brdf(&hit)
-						* dot(normalize(lightSamplePosition - light.origin), -lightSampleDir)
-						* dot(hit.normal, lightSampleDir) 
-						* invLightPdf
-						/ (shadowMaxT * shadowMaxT);
+
+				if(hit.material.is_specular)
+				{
+					previousBounceSpecular = true;
+				}
+				else
+				{
+					previousBounceSpecular = false;
+					float invLightPdf;
+					float3 lightSamplePosition;
+					{
+						float3 lightDir = normalize(light.origin - hit.position);
+						float2 u = rand2(pixelXy.x + pixelXy.y * viewportSize.x, 
+								(uint2)(bounceIdx + NUM_BOUNCES, iterationIdx));
+						lightSamplePosition = sampleSphere(lightDir, u, &light, &invLightPdf);
+					}
+					float3 lightSampleDir = normalize(lightSamplePosition - hit.position);
+					Ray shadowRay = makeRay(
+						hit.position + lightSampleDir * HIT_NEXT_RAY_EPSILON,
+						lightSampleDir);
+					float shadowMaxT = length(lightSamplePosition - shadowRay.origin);
+					if(!shadowIntersectAllGeom(&shadowRay, &scene, shadowMaxT))
+					{		
+						float cos0 = clamp(dot(normalize(lightSamplePosition - light.origin), -lightSampleDir), 0.f, 1.f);
+						float cos1 = clamp(dot(hit.normal, lightSampleDir), 0.f, 1.f);
+						value += throughput 
+							* light.material.emission
+							* brdf(&hit)
+							* cos0
+							* cos1
+							* invLightPdf
+							/ (shadowMaxT * shadowMaxT);
+					}
 				}
 
 				if(bounceIdx < NUM_BOUNCES - 1)
@@ -348,7 +494,8 @@ kernel void part1(
 					if(hit.material.is_specular)
 					{
 						wiWorld = reflect(hit.normal, ray.direction);
-						throughput *= dot(wiWorld, hit.normal) * hit.material.albedo;
+						//no cos() here
+						throughput *= hit.material.albedo;
 					}
 					else
 					{				
