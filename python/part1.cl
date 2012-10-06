@@ -423,9 +423,9 @@ kernel void part1(
 	
 	Sphere light;
 	light.origin = (float3)(6,3,2);
-	light.radius = .6;
+	light.radius = 1.3;
 	light.material.is_emissive = true;
-	light.material.emission = 100;
+	light.material.emission = 50;
 
 
 	float3 value = 0;
@@ -434,7 +434,7 @@ kernel void part1(
 		Ray ray = cameraRay;
 		float3 throughput = 1;
 		bool previousBounceSpecular = false;
-		for(uint bounceIdx = 0; bounceIdx < NUM_BOUNCES; bounceIdx++)
+		for(uint bounceIdx = 0; bounceIdx < NUM_BOUNCES + 1; bounceIdx++)
 		{
 			Hit hit;
 			bool has_hit;
@@ -451,6 +451,10 @@ kernel void part1(
 				if((previousBounceSpecular || bounceIdx == 0) && hit.material.is_emissive)
 				{
 					value += throughput * hit.material.emission;
+				}
+				if(bounceIdx == NUM_BOUNCES)
+				{
+					break;
 				}
 
 				if(hit.material.is_specular)
@@ -487,33 +491,32 @@ kernel void part1(
 					}
 				}
 
-				if(bounceIdx < NUM_BOUNCES - 1)
+				//we break out as appropriate above
+				float3 wiWorld;
+
+				if(hit.material.is_specular)
 				{
-					float3 wiWorld;
-
-					if(hit.material.is_specular)
-					{
-						wiWorld = reflect(hit.normal, ray.direction);
-						//no cos() here
-						throughput *= hit.material.albedo;
-					}
-					else
-					{				
-						float pdf;		
-						float2 u = rand2(pixelXy.x + pixelXy.y * viewportSize.x, 
-							(uint2)(bounceIdx, iterationIdx));
-						wiWorld = sampleCosWeightedHemi(hit.normal, u, &pdf);
-						//pdf = cos(theta)/pi for diffuse
-						//invPdf = pi / cos(theta)
-						float invPdf = M_PI_F / dot(wiWorld, hit.normal); 
-						throughput *= hit.material.albedo; //pi canceled out (pdf, lambert)
-					}
-
-					
-					ray = makeRay(
-						hit.position + wiWorld * HIT_NEXT_RAY_EPSILON,
-						wiWorld);
+					wiWorld = reflect(hit.normal, ray.direction);
+					//no cos() here
+					throughput *= hit.material.albedo;
 				}
+				else
+				{				
+					float pdf;		
+					float2 u = rand2(pixelXy.x + pixelXy.y * viewportSize.x, 
+						(uint2)(bounceIdx, iterationIdx));
+					wiWorld = sampleCosWeightedHemi(hit.normal, u, &pdf);
+					//pdf = cos(theta)/pi for diffuse
+					//invPdf = pi / cos(theta)
+					float invPdf = M_PI_F / dot(wiWorld, hit.normal); 
+					throughput *= hit.material.albedo; //pi canceled out (pdf, lambert)
+				}
+
+				
+				ray = makeRay(
+					hit.position + wiWorld * HIT_NEXT_RAY_EPSILON,
+					wiWorld);
+			
 			}
 			else
 			{
