@@ -376,11 +376,19 @@ float2 sampleDisc(float2 u, float radius)
 {
 	return (float2)(sqrt(u.x), 2 * M_PI_F * u.y);
 }
+float3 sampleSphereDirection(float2 u, float* invPdf)
+{
+	*invPdf = 4 * M_PI_F;
+	float xyMultiplier = 2 * sqrt(u.y * (1 - u.y));
+	float inner = 2 * M_PI_F * u.x;
+	return (float3)(cos(inner), sin(inner), 1 - 2 * u.y) 
+		* (float3)(xyMultiplier, xyMultiplier, 1);
+}
 //don't think this is actually correct, as you could be really close
 //to the sphere... and pick points that are occluded by the curvature
 float3 sampleSphere(float3 incident, float2 u, Sphere* sphere, float* invPdf)
 {
-	*invPdf = 4 * M_PI_F * sphere->radius * sphere->radius;
+	*invPdf = 2 * M_PI_F * sphere->radius * sphere->radius;
 	float xyMultiplier = 2 * sqrt(u.y * (1 - u.y));
 	float inner = 2 * M_PI_F * u.x;
 	float3 direction = (float3)(cos(inner), sin(inner), 1 - 2 * u.y) 
@@ -389,21 +397,79 @@ float3 sampleSphere(float3 incident, float2 u, Sphere* sphere, float* invPdf)
 	return direction * sphere->radius + sphere->origin;
 }
 #define NUM_BOUNCES 4
-#define NUM_ITERATIONS 100
+#define NUM_ITERATIONS 5
 typedef struct {
 	float4 cameraPos;
 	f4x4 invView;
 	f4x4 invProj;
+	f4x4 view;
+	f4x4 proj;
 } ViewParams;
 float3 reflect(float3 normal, float3 incident)
 {
 	return incident - 2 * normal * dot(normal, incident);
 }
+int2 world2screen(float3 world, constant ViewParams* viewParam, bool* visible)
+{	
+	float4 view = mul(viewParam->view, (float4)(world, 1));
+	float4 clipCoord = mul(viewParam->proj, (float4)(view.xyz, 1));
+	float2 ndc = (clipCoord / clipCoord.w).xy;
+
+	int2 screenSize = (get_global_size(0), get_global_size(1)); 
+	int2 screen = convert_int2((ndc * (float2)(1, -1) + 1) * .5f * convert_float2(screenSize));
+	*visible = all(screen > -1) && all(screen < screenSize);
+	return screen;
+}
+
+uint2 getPixelXy()
+{
+	return (uint2)(get_global_id(0), get_global_id(1));
+}
+uint2 getViewportSize()
+{
+	return (uint2)(get_global_size(0), get_global_size(1)); 
+}
+uint getGlobalLinId()
+{
+	uint2 pixelXy = getPixelXy();	
+	return pixelXy.x + pixelXy.y * getViewportSize().x;
+}
+uint getGlobalLinIdFor(int2 screenPos)
+{
+	uint2 pixelXy = convert_uint2(screenPos);
+	return pixelXy.x + pixelXy.y * getViewportSize().x;
+}
+float2 getNdc()
+{	
+	float2 ndc = convert_float2(getPixelXy()) / convert_float2(getViewportSize());
+	ndc -= (float2)(0.5, 0.5);
+	ndc *= (float2)(2, -2);
+	return ndc;
+}
+Ray getCameraRay(constant ViewParams* viewParam)
+{	
+	float2 ndc = getNdc();
+	float4 pView = mul(viewParam->invProj, (float4)(ndc, -1, 1));
+	pView /= pView.w;
+	pView.w = 1;
+	float4 pWorld = mul(viewParam->invView, pView);
+	
+	Ray cameraRay;
+	cameraRay.direction = normalize(pWorld.xyz - viewParam->cameraPos.xyz);
+	cameraRay.origin = pWorld.xyz;
+	return cameraRay;
+}
+void atomic_add_int4(global int* base, int linid, int4 val)
+{
+	atomic_add(base + linid * 4 + 0, val.x);
+	atomic_add(base + linid * 4 + 1, val.y);
+	atomic_add(base + linid * 4 + 2, val.z);
+	atomic_add(base + linid * 4 + 3, val.w);
+}
 kernel void part1(
 	constant ViewParams* viewParam,
-	global float* color)
+	global int* color)
 {	 
-
     int ltid = get_local_id(0) + get_local_size(0) * get_local_id(1);
 	uint2 pixelXy = (uint2)(get_global_id(0), get_global_id(1));
 	uint2 viewportSize = (uint2)(get_global_size(0), get_global_size(1)); 
@@ -416,80 +482,64 @@ kernel void part1(
 	pView /= pView.w;
 	pView.w = 1;
 	float4 pWorld = mul(viewParam->invView, pView);
-	
-	Ray cameraRay;
-	cameraRay.direction = normalize(pWorld.xyz - viewParam->cameraPos.xyz);
-	cameraRay.origin = pWorld.xyz;
-	
+
+	int linid =  pixelXy.x + pixelXy.y * viewportSize.x;
+	color[linid * 4 ] = 0;
+	color[linid * 4 + 1] = 0;
+	color[linid * 4 + 2] = 0;
+	color[linid * 4 + 3] = 0;
+
 	Sphere light;
 	light.origin = (float3)(6,3,2);
 	light.radius = 1.3;
 	light.material.is_emissive = true;
 	light.material.emission = 50;
 
-
-	float3 value = 0;
 	for(uint iterationIdx = 0; iterationIdx < NUM_ITERATIONS; iterationIdx++)
-	{
-		Ray ray = cameraRay;
+	{		
 		float3 throughput = 1;
-		bool previousBounceSpecular = false;
+		Ray ray;
+		{
+			float2 u0 = rand2(getGlobalLinId(), (uint2)(0, NUM_ITERATIONS + iterationIdx));
+			float invPdfSphere;
+			float3 sphereDirection = sampleSphereDirection(u0, &invPdfSphere);
+
+			float2 u1 = rand2(getGlobalLinId(), (uint2)(1, NUM_ITERATIONS + iterationIdx));
+			float3 lightPathP0 = sphereDirection * light.radius + light.origin;
+			float woPdf;
+			float3 lightPathDirection = sampleCosWeightedHemi(sphereDirection, u1, &woPdf);
+			ray = makeRay(lightPathP0, lightPathDirection);
+
+			throughput = invPdfSphere * light.radius * light.radius * 1/woPdf * light.material.emission;
+		}
+
 		for(uint bounceIdx = 0; bounceIdx < NUM_BOUNCES + 1; bounceIdx++)
 		{
-			Hit hit;
-			bool has_hit;
-			if(previousBounceSpecular || bounceIdx == 0)
-			{
-				has_hit = intersectAllGeomWithLight(&ray, &scene, &light, &hit);
-			}
-			else
-			{
-				has_hit = intersectAllGeom(&ray, &scene, &hit);
-			}
-			if(has_hit)
-			{
-				if((previousBounceSpecular || bounceIdx == 0) && hit.material.is_emissive)
-				{
-					value += throughput * hit.material.emission;
-				}
-				if(bounceIdx == NUM_BOUNCES)
-				{
-					break;
-				}
-
-				if(hit.material.is_specular)
-				{
-					previousBounceSpecular = true;
-				}
-				else
-				{
-					previousBounceSpecular = false;
-					float invLightPdf;
-					float3 lightSamplePosition;
+			Hit hit;		
+			//pinhole camera = specular can never hit camera
+			if(intersectAllGeom(&ray, &scene, &hit))
+			{				
+				if(!hit.material.is_specular)
+				{					
+					bool visible = false;
+					int2 screenPos = world2screen(hit.position, viewParam, &visible);
+					if(visible)
 					{
-						float3 lightDir = normalize(light.origin - hit.position);
-						float2 u = rand2(pixelXy.x + pixelXy.y * viewportSize.x, 
-								(uint2)(bounceIdx + NUM_BOUNCES, iterationIdx));
-						lightSamplePosition = sampleSphere(lightDir, u, &light, &invLightPdf);
-					}
-					float3 lightSampleDir = normalize(lightSamplePosition - hit.position);
-					Ray shadowRay = makeRay(
-						hit.position + lightSampleDir * HIT_NEXT_RAY_EPSILON,
-						lightSampleDir);
-					float shadowMaxT = length(lightSamplePosition - shadowRay.origin);
-					if(!shadowIntersectAllGeom(&shadowRay, &scene, shadowMaxT))
-					{		
-						float cos0 = clamp(dot(normalize(lightSamplePosition - light.origin), -lightSampleDir), 0.f, 1.f);
-						float cos1 = clamp(dot(hit.normal, lightSampleDir), 0.f, 1.f);
-						value += throughput 
-							* light.material.emission
-							* brdf(&hit)
-							* cos0
-							* cos1
-							* invLightPdf
-							/ (shadowMaxT * shadowMaxT);
+
+						float3 lightSampleDir = normalize(viewParam->cameraPos.xyz - hit.position);
+						Ray shadowRay = makeRay(
+							hit.position + lightSampleDir * HIT_NEXT_RAY_EPSILON,
+							lightSampleDir);
+						float shadowMaxT = length(viewParam->cameraPos.xyz - shadowRay.origin);
+						if(!shadowIntersectAllGeom(&shadowRay, &scene, shadowMaxT))
+						{		
+							//write 
+							int linid = getGlobalLinIdFor(screenPos);
+							atomic_add_int4(color, linid, convert_int4((float4)(throughput, 1) * 256));
+						}
 					}
 				}
+				return;
 
 				//we break out as appropriate above
 				float3 wiWorld;
@@ -525,15 +575,4 @@ kernel void part1(
 		}
 	}
 	
-	value /= NUM_ITERATIONS;
-	value = value / (1 + value);
-	/*
-	int existingNumSamples = g_time_sampleCount.y;
-	float existingRatio = (float)existingNumSamples / (existingNumSamples + 1);
-	float newRatio = 1 - existingRatio;
-	float4 existing = InputMap.Load(int3(pixelXy, 0));
-	OutputMap[pixelXy] = existingRatio * existing + newRatio * float4(value, 1);
-	*/	
-	
-	vstore4((float4)(value, 1), viewportSize.x * pixelXy.y + pixelXy.x, color);
 }

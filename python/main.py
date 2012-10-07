@@ -163,18 +163,23 @@ def test_cl():
     program = cl.Program(ctx, fstr).build()
     mf = cl.mem_flags
 
-    cameraPos = np.array([0,6,-1,0])
-    invView = la.inv(look_at((0,6, -1), (0,1,1), (0,1,0)))
-    invProj = la.inv(perspective(60, 1, 1, 1000))
-    print 'view', invView
-    print 'proj', invProj
-    viewParamsData = cameraPos.flatten().tolist() + np.transpose(invView).flatten().tolist() + np.transpose(invProj).flatten().tolist()
+    cameraPos = np.array([0,6,-10,0])
+    view = look_at((0,0, -10), (0,0,0), (0,1,0))
+    proj = perspective(60, 1, 1, 1000)
+
+    invView = la.inv(view)
+    invProj = la.inv(proj)
+    print 'view', view
+    print 'invView', invView
+    print 'invProj', invProj
+    print 'proj * view', proj * view
+    viewParamsData = cameraPos.flatten().tolist() + invView.T.flatten().tolist() + invProj.T.flatten().tolist() + view.T.flatten().tolist() + proj.T.flatten().tolist()
     #print 'vpd', viewParamsData
-    viewParams = struct.pack('4f16f16f', *viewParamsData)
+    viewParams = struct.pack('4f16f16f16f16f', *viewParamsData)
     viewParams_buf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=viewParams)
-    num_pixels = 1000 * 1000
+    num_pixels = 200 * 200
     #setup opencl
-    dest = np.ndarray((1000, 1000, 4), dtype=np.float32)    
+    dest = np.ndarray((200, 200, 4), dtype=np.int32)    
     dest_buf = cl.Buffer(ctx, mf.WRITE_ONLY, dest.nbytes)
     local_shape = (8, 8)
     #run kernel
@@ -183,7 +188,7 @@ def test_cl():
     #evt = program.part1(queue, dest.shape, None, dest_buf)
     cl.enqueue_read_buffer(queue, dest_buf, dest).wait()
     print 'time', (evt.profile.end - evt.profile.start) * 0.000001, 'ms'
-    return dest
+    return dest, invView, view
 
 if __name__ == "__main__":
     test_cl()
