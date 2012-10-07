@@ -17,7 +17,19 @@ cbuffer MC
 	float4 g_time_sampleCount;
 };
 
-
+float2 rand2(uint key0, uint key1)
+{
+	#define RAND_ROUNDS 6
+	uint2 v = uint2(key0, key1);
+	uint s=0x9E3779B9u;
+	for(int i=0; i<RAND_ROUNDS; ++i) 
+	{
+		s += 0x9E3779B9u;
+		v.x += ((v.y<<4u)+0xA341316Cu)^(v.y+s)^((v.y>>5u)+0xC8013EA4u);
+		v.y += ((v.x<<4u)+0xAD90777Du)^(v.x+s)^((v.x>>5u)+0x7E95761Eu);
+	}
+	return v*(1.f/4294967296.f); //[0,1]
+}
 #define PI 3.141592654
 // Group size
 #define size_x 32
@@ -200,12 +212,18 @@ bool intersectAllGeom(Ray ray, out Hit hit)
 	}
 	return hasHit;
 }
+uint linid(uint3 DTid)
+{
+	return DTid.x + DTid.y * size_x;
+}
 // Declare one thread for each texel of the input texture.
 [numthreads(size_x, size_y, 1)]
-void CSMAIN( uint3 GroupID : SV_GroupID, uint3 DispatchThreadID : SV_DispatchThreadID, uint3 GroupThreadID : SV_GroupThreadID, uint GroupIndex : SV_GroupIndex )
+void CSMAIN(uint3 GroupID : SV_GroupID, 
+			uint3 DispatchThreadID : SV_DispatchThreadID, 
+			uint3 GroupThreadID : SV_GroupThreadID, uint GroupIndex : SV_GroupIndex )
 {		
 	initializeGeom();
-
+	uint lid = linid(DispatchThreadID);
 	int2 pixelXy = DispatchThreadID.xy;
 
 	float2 ndc = ((pixelXy / float2(VIEWPORT_W, VIEWPORT_H)) - 0.5) * float2(2, -2);
@@ -241,7 +259,8 @@ void CSMAIN( uint3 GroupID : SV_GroupID, uint3 DispatchThreadID : SV_DispatchThr
 			}
 			if(bounceIdx < NUM_BOUNCES - 1)
 			{
-				float2 u = float2(rand.next(), rand.next());
+				//max of 32 bounces
+				float2 u = rand2(lid, bounceIdx + (uint)g_time_sampleCount.y << 5);
 				float a = sqrt(1 - u.y * u.y);
 				float3 wi = float3(cos(2 * PI * u.x) * a, sin(2 * PI * u.x) * a, u.y);
 				
@@ -260,5 +279,7 @@ void CSMAIN( uint3 GroupID : SV_GroupID, uint3 DispatchThreadID : SV_DispatchThr
 	float existingRatio = (float)existingNumSamples / (existingNumSamples + 1);
 	float newRatio = 1 - existingRatio;
 	float4 existing = InputMap.Load(int3(pixelXy, 0));
-	OutputMap[pixelXy] = existingRatio * existing + newRatio * float4(value, 1);
+		
+	float2 u = rand2((lid << 5) & lid, (lid << 5) & lid);//0 + (uint)g_time_sampleCount.y << 5);
+	OutputMap[pixelXy] = float4(0, u.x , 0, 1);//existingRatio * existing + newRatio * float4(value, 1);
 }
