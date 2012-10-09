@@ -173,7 +173,7 @@ float3 brdf(Hit* hit)
 #define RED (float3)(1, 0, 0)
 #define HIT_NEXT_RAY_EPSILON 0.0001f
 //LDDE = 2 bounces, LE = 0 bounces, LDDDE = 3 bounces
-#define NUM_SPHERES 3
+#define NUM_SPHERES 1
 #define NUM_INF_HORIZ_PLANES 1
 #define NUM_RINGS 1
 typedef struct {
@@ -183,12 +183,12 @@ typedef struct {
 } Scene;
 void initScene(Scene* scene)
 {
-	scene->sphere[0].origin = (float3)(0, .6, 3);
+	scene->sphere[0].origin = (float3)(0, 0, 0);
 	scene->sphere[0].radius = .7;
 	scene->sphere[0].material.albedo = (float3)(.7, .8, .6);
 	scene->sphere[0].material.is_specular = false;
 	scene->sphere[0].material.is_emissive = false;
-	
+	/*
 	scene->sphere[1].origin = (float3)(-1, .5, 3);
 	scene->sphere[1].radius = .25;
 	scene->sphere[1].material.albedo = (float3)(.4, .5, .8);
@@ -212,7 +212,7 @@ void initScene(Scene* scene)
 	scene->ring[0].material.is_specular = false;
 	scene->ring[0].material.is_emissive = false;
 	scene->ring[0].height = .8;
-
+*/
 }
 bool intersectAllGeomWithLight(Ray* ray, Scene* scene, Sphere* light, Hit* hit)
 {
@@ -235,6 +235,7 @@ bool intersectAllGeomWithLight(Ray* ray, Scene* scene, Sphere* light, Hit* hit)
 			*hit = tempHit;				
 		}
 	}
+	return hasHit;
 	for(int i = 0; i < NUM_RINGS; i++)
 	{
 		Hit tempHit;
@@ -272,6 +273,7 @@ bool intersectAllGeom(Ray* ray, Scene* scene, Hit* hit)
 			*hit = tempHit;				
 		}
 	}
+	return hasHit;
 	for(int i = 0; i < NUM_RINGS; i++)
 	{
 		Hit tempHit;
@@ -308,6 +310,7 @@ bool shadowIntersectAllGeom(Ray* ray, Scene* scene, float maxT)
 			return true;			
 		}
 	}
+	return false;
 	for(int i = 0; i < NUM_RINGS; i++)
 	{
 		Hit tempHit;
@@ -640,6 +643,6 @@ kernel void part1(
 	float4 existing = InputMap.Load(int3(pixelXy, 0));
 	OutputMap[pixelXy] = existingRatio * existing + newRatio * float4(value, 1);
 	*/	
-	
-	vstore4((float4)(value, 1), getGlobalLinId(), color);
+	Hit d;
+	vstore4((float4)(intersectSphere(&cameraRay, &scene.sphere[0], &d), 0, 0 , 1), getGlobalLinId(), color);
 }
