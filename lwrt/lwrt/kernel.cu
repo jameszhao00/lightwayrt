@@ -9,7 +9,7 @@
 
 #include "validate_importance_sampling.h"
 
-const int NUM_ITERATION = 300;
+const int NUM_ITERATION = 30;
 const int NUM_BOUNCES = 3;
 
 __global__ void gfx_kernel(vec4 *data, const Camera* camera, int width, int height) {
@@ -20,15 +20,15 @@ __global__ void gfx_kernel(vec4 *data, const Camera* camera, int width, int heig
 	color value(0,0,0);
 	for(int iteration_idx = 0; iteration_idx < NUM_ITERATION; iteration_idx++)
 	{
-		Ray<WorldCS> ray = camera_ray(*camera, xy, screen_size);
+		Ray<World> ray = camera_ray(*camera, xy, screen_size);
 		color throughput(1,1,1);
 		for(int bounce_idx = 0; bounce_idx < NUM_BOUNCES; bounce_idx++)
 		{
-			Hit<WorldCS> hit;
+			Hit<World> hit;
 			if(ray.intersect_scene(scene, &hit))
 			{
-				position<WorldCS> light_pos(0, 10, 0);
-				direction<WorldCS> light_dir(hit.position, light_pos);
+				position<World> light_pos(0, 10, 0);
+				direction<World> light_dir(hit.position, light_pos);
 				//shade
 				value += throughput * saturate(light_dir.dot(hit.normal)) * hit.material.albedo;
 				if(iteration_idx != NUM_ITERATION - 1)
@@ -36,9 +36,9 @@ __global__ void gfx_kernel(vec4 *data, const Camera* camera, int width, int heig
 					//make new ray
 					vec2 u = rand2(xy, uvec2(iteration_idx, bounce_idx));
 					float inv_pdf;
-					direction<WorldCS> wi = sampleCosWeightedHemi(hit.normal, u, &inv_pdf);
+					direction<World> wi = sampleCosWeightedHemi(hit.normal, u, &inv_pdf);
 					throughput *= inv_pdf * hit.material.albedo * wi.dot(hit.normal);
-					ray = Ray<WorldCS>(hit.position, wi).offset_by(RAY_EPSILON);
+					ray = Ray<World>(hit.position, wi).offset_by(RAY_EPSILON);
 				}
 			}
 			else
@@ -63,7 +63,7 @@ int main(int argc, char* const argv[]) {
 	Camera *camera_ptr = NULL;
 	vec4* odata = new vec4[WIDTH * HEIGHT];
 
-	Camera camera(position<WorldCS>(0,1,-4), position<WorldCS>(0,0,1));
+	Camera camera(position<World>(0,1,-4), position<World>(0,0,1));
 	CUDA_CHECK_RETURN(cudaMalloc((void**) &d, sizeof(vec4) * WIDTH * HEIGHT));
 	CUDA_CHECK_RETURN(cudaMalloc((void**) &camera_ptr, sizeof(Camera)));
 	CUDA_CHECK_RETURN(cudaMemcpy(camera_ptr, &camera, sizeof(Camera), cudaMemcpyHostToDevice));
@@ -99,26 +99,27 @@ int main(int argc, char* const argv[]) {
 TEST_CASE("camera/camera_ray", "standard camera_ray") 
 {
 	{
-		Camera camera(position<WorldCS>(0.f,0.f,0.f), position<WorldCS>(0, 0, -100));
+		Camera camera(position<World>(0.f,0.f,0.f), position<World>(0, 0, -100));
 		uvec2 screen_size(5, 5);
 		{
-			auto ray = camera_ray(camera, uvec2(2, 2), screen_size);
+			Ray<World> ray = camera_ray(camera, uvec2(2, 2), screen_size);
 			REQUIRE(close_to(ray.origin.z, -1));
 		}
 		{
-			auto ray = camera_ray(camera, uvec2(0, 0), screen_size);
+			Ray<World> ray = camera_ray(camera, uvec2(0, 0), screen_size);
 			REQUIRE(ray.origin.x < 0);
 			REQUIRE(ray.origin.y > 0);	
 			REQUIRE(close_to(ray.origin.z, -1));
 		}
 		{
-			auto ray = camera_ray(camera, uvec2(4, 4), screen_size);
+			Ray<World> ray = camera_ray(camera, uvec2(4, 4), screen_size);
 			REQUIRE(ray.origin.x > 0);
 			REQUIRE(ray.origin.y < 0);	
 			REQUIRE(close_to(ray.origin.z, -1));
 		}
 	}
 }
+/*
 #include <random>
 TEST_CASE("diffuse/sample_uniform", "sample hemi") 
 {	
@@ -148,6 +149,7 @@ TEST_CASE("diffuse/sample_uniform", "sample hemi")
 	}
 }
 
+
 TEST_CASE("intersect/intersect_plane", "hits plane everywhere") 
 {
 	InfiniteHorizontalPlane plane(0, Material(color(1,1,1)));
@@ -159,3 +161,4 @@ TEST_CASE("intersect/intersect_plane", "hits plane everywhere")
 		REQUIRE(glm::all(glm::equal(hit.normal, vec3(0.f,1.f,0.f))));
 	}
 }
+*/

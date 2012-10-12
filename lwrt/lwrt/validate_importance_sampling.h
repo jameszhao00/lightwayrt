@@ -1,4 +1,5 @@
 #pragma once
+/*
 #include <functional>
 #include "glm/glm.hpp"
 using namespace glm;
@@ -87,3 +88,4 @@ float validate_importance_sampling(
 	assert(chi_squared < 300);
 	return 0;
 }
+*/
