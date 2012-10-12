@@ -1,0 +1,23 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lwrt", "lwrt\lwrt.vcxproj", "{8BE3B48D-9D72-4D32-8D0C-8DA08DC6A380}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+		UnitTest|Win32 = UnitTest|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8BE3B48D-9D72-4D32-8D0C-8DA08DC6A380}.Debug|Win32.ActiveCfg = Debug|Win32
+		{8BE3B48D-9D72-4D32-8D0C-8DA08DC6A380}.Debug|Win32.Build.0 = Debug|Win32
+		{8BE3B48D-9D72-4D32-8D0C-8DA08DC6A380}.Release|Win32.ActiveCfg = Release|Win32
+		{8BE3B48D-9D72-4D32-8D0C-8DA08DC6A380}.Release|Win32.Build.0 = Release|Win32
+		{8BE3B48D-9D72-4D32-8D0C-8DA08DC6A380}.UnitTest|Win32.ActiveCfg = UnitTest|Win32
+		{8BE3B48D-9D72-4D32-8D0C-8DA08DC6A380}.UnitTest|Win32.Build.0 = UnitTest|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
