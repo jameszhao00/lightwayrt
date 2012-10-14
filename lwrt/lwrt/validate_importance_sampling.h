@@ -2,7 +2,6 @@
 
 #include <functional>
 #include "glm/glm.hpp"
-using namespace glm;
 using namespace std;
 
 template<int NumThetaBins, int NumPhiBins>
@@ -28,7 +27,7 @@ float validate_importance_sampling(
 	{
 		InversePdf inv_pdf;
 		direction<World> xyz_dir = rand_to_xyz(generate_rand_nums_func(), &inv_pdf);
-		assert(xyz_dir.valid());
+		assert(xyz_dir.is_normalized());
 		auto theta_phi = spherical(xyz_dir);
 		theta_phi.y += PI; //[-pi, pi] to [0, 2pi]
 		int theta_bin_idx = floor((theta_phi.x / ThetaRange) * NumThetaBins);

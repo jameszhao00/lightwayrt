@@ -137,6 +137,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="catch.hpp" />
+    <ClInclude Include="math.h" />
     <ClInclude Include="validate_importance_sampling.h" />
     <ClInclude Include="util.h" />
   </ItemGroup>

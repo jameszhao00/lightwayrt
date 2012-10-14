@@ -5,75 +5,144 @@
 #include "math_constants.h"
 #include "Random123/philox.h"
 #include "Random123/u01.h"
+namespace ref
+{
 #define GLM_FORCE_CUDA
 #include "glm/glm.hpp"
 #include "glm/gtx/quaternion.hpp"
 #include "glm/gtx/matrix_operation.hpp"
 #include "glm/gtc/matrix_transform.hpp"
+}
 #define PI CUDART_PI
 #define RAY_EPSILON 0.00001f
 #define GPU_CPU __host__ __device__
 #define GPU __device__
 
-template<typename T>
-GPU_CPU T saturate(T val)
-{
-	return glm::clamp(val, 0, 1);
-}
 enum CoordinateSystem
 {
 	World,
 	Local,
 	ZUp
 };
-struct color : glm::vec3 
-{
-	GPU_CPU color() : glm::vec3(0.f,0.f,0.f) { }
-	GPU_CPU color(const glm::vec3& other) : glm::vec3(other) { }
-	GPU_CPU color(const color& other) : glm::vec3(other.x, other.y, other.z) { }
-	GPU_CPU color(float x, float y, float z) : glm::vec3(x,y,z) { }
-};
 
+struct v3
+{
+	float x,y,z;	
+	GPU_CPU v3() : x(0), y(0), z(0) { }
+	GPU_CPU v3(float xyz) : x(xyz), y(xyz), z(xyz) { }
+	GPU_CPU v3(float x, float y, float z) : x(x), y(y), z(z) { }
+	GPU_CPU void set(float v) { x=v;y=v;z=v; }
+};
+GPU_CPU v3 clamp(const v3& v, float min_val, float max_val)
+{
+	return v3(
+		max(min(v.x, max_val), min_val),
+		max(min(v.y, max_val), min_val),
+		max(min(v.z, max_val), min_val));
+}
+GPU_CPU float clamp(float v, float min_val, float max_val)
+{
+	return max(min(v, max_val), min_val);
+}
+GPU_CPU v3 saturate(const v3& v)
+{
+	return clamp(v, 0, 1);
+}
+GPU_CPU float dot(const v3& lhs, const v3& rhs)
+{
+	return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+}
+GPU_CPU v3 v3_add(const v3& lhs, const v3& rhs) { return v3(lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z); }
+GPU_CPU v3 v3_neg(const v3& v) { return v3(-v.x, -v.y, -v.z); }
+GPU_CPU v3 v3_sub(const v3& lhs, const v3& rhs) { return v3_add(lhs, v3_neg(rhs)); }
+
+GPU_CPU v3 v3_mul(const v3& v, float m) { return v3(v.x*m,v.y*m,v.z*m); }
+GPU_CPU v3 v3_mul(const v3& a, const v3& b) { return v3(a.x*b.x,a.y*b.y,a.z*b.z); }
+
+GPU_CPU float v3_len(const v3& v) { return sqrt(dot(v, v)); }
+GPU_CPU v3 v3_normalized(const v3& v) { return v3_mul(v, (1.f / v3_len(v))); }
+
+struct color : v3
+{
+	GPU_CPU color() : v3(1) { }
+	GPU_CPU color(const v3& v) : v3(v) { }
+	GPU_CPU color(float x, float y, float z) : v3(x,y,z) { }
+	GPU_CPU color operator*(v3 s) const { return v3_mul(*this, s); }
+	GPU_CPU color& operator=(float v) { set(v); return *this;}
+
+	GPU_CPU color operator+(const color& rhs) const { return v3_add(*this, rhs); }
+	GPU_CPU color operator-(const color& rhs) const { return v3_sub(*this, rhs); }
+	GPU_CPU color operator*(float rhs) const { return v3_mul(*this, rhs); }
+	GPU_CPU color operator/(float rhs) const { return *this * (1.f/rhs);	}
+};
 
 template<CoordinateSystem CS>
-struct position : glm::vec3
+struct position : v3
 {
-	GPU_CPU position() : glm::vec3() { }
-	GPU_CPU position(const glm::vec3& v) : glm::vec3(v) { }
-	GPU_CPU position(const position& v) : glm::vec3(v.x, v.y, v.z) { }
-	GPU_CPU position(float x, float y, float z) : glm::vec3(x,y,z) { }
+	GPU_CPU position() : v3(0) { }
+	GPU_CPU position(const v3& v) : v3(v) { }
+	GPU_CPU position(float x, float y, float z) : v3(x,y,z) { }
+	GPU_CPU position& operator=(float v) { set(v); return *this;}
 };
-
+GPU_CPU ref::glm::vec3 to_glm(const v3& v)
+{
+	return ref::glm::vec3(v.x, v.y, v.z);
+}
 template<CoordinateSystem CS>
-struct direction : glm::vec3
+struct offset : v3
 {
-	GPU_CPU direction() : glm::vec3() { }
-	GPU_CPU direction(const glm::vec3& v) : glm::vec3(v) { }
-	GPU_CPU direction(const direction& v) : glm::vec3(v.x, v.y, v.z) { }
-	GPU_CPU direction(const position<CS>& a, const position<CS>& b)
-		: glm::vec3(glm::normalize(b - a)) { }
-	GPU_CPU direction(float x, float y, float z) : glm::vec3(x,y,z) { }
-	GPU_CPU direction<CS> negated() const
-	{
-		return (direction<CS>)(*this * -1.f);
-	}
-	GPU_CPU float dot(const direction<CS>& other) const
-	{
-		glm::vec3 otherv3 = other;
-		return glm::dot(*this, otherv3);
-	}
-	GPU_CPU bool valid() const
-	{
-		return glm::abs(sqrt(this->dot(*this)) - 1.f) < 0.00001f;
-	}
+	GPU_CPU offset(const v3& v) : v3(v) { }
+	GPU_CPU offset(float x, float y, float z) : v3(x,y,z) { }
+	GPU_CPU offset<CS> operator-() const { return offset<CS>(v3_neg(*this)); }
+	GPU_CPU offset<CS> operator*(float s) const { return (offset<CS>)v3_mul(*this, s); }
+	GPU_CPU offset<CS> operator+(const offset<CS>& rhs) const { return v3_add(*this, rhs); }
+	GPU_CPU offset<CS> operator-(const offset<CS>& rhs) const { return v3_sub(*this, rhs); }
+	GPU_CPU offset& operator=(float v) { set(v); return *this;}
 };
-typedef glm::mat4x4 mat4x4;
-typedef glm::uvec2 uvec2;
-typedef glm::uvec4 uvec4;
-typedef glm::vec2 vec2;
-//typedef glm::vec4 vec4;
-typedef glm::vec2 NormalizedSphericalCS;
-typedef glm::vec2 RandomPair;
+template<CoordinateSystem CS>
+struct direction : v3
+{
+	GPU_CPU direction() : v3(0) { }
+	GPU_CPU direction(const position<CS>& from, const position<CS>& to) : v3(v3_normalized(v3_sub(to, from))) { }
+	GPU_CPU direction(float x, float y, float z) : v3(x,y,z) { }
+	GPU_CPU direction(const v3& v) : v3(v) { }
+	GPU_CPU offset<CS> operator*(float s) const { return offset<CS>(v3_mul(*this, s)); }
+	GPU_CPU direction<CS> operator-() const { return direction<CS>(v3_neg(*this)); }
+	GPU_CPU v3 operator*(const v3& s) const { return v3_mul(*this, s); }
+	GPU_CPU bool is_normalized() const { return abs(v3_len(*this) - 1) < 0.00001f;}
+};
+template<CoordinateSystem CS>
+GPU_CPU direction<CS> cross(const direction<CS>& x, const direction<CS>& y)
+{
+	return direction<CS>(
+		x.y * y.z - y.y * x.z,
+		x.z * y.x - y.z * x.x,
+		x.x * y.y - y.x * x.y);
+}
+template<CoordinateSystem CS>
+GPU_CPU offset<CS> operator-(const position<CS>& lhs, const position<CS>& rhs)
+{
+	return offset<CS>(v3_sub(lhs, rhs)); 
+} 
+template<CoordinateSystem CS>
+GPU_CPU position<CS> operator+(const position<CS>& lhs, const offset<CS>& rhs)
+{
+	return position<CS>(v3_add(lhs, rhs)); 
+} 
+template<CoordinateSystem CS>
+GPU_CPU position<CS> operator-(const position<CS>& lhs, const offset<CS>& rhs)
+{
+	return lhs + -rhs;
+} 
+
+
+typedef ref::glm::vec2 NormalizedSphericalCS;
+typedef ref::glm::vec2 RandomPair;
+typedef ref::glm::uvec2 RandomKey;
+typedef ref::glm::uvec2 RandomCounter;
+typedef ref::glm::uvec2 SreenPosition;
+typedef ref::glm::vec2 Ndc;
+typedef ref::glm::vec2 Size;
 typedef float InversePdf;
 
 #define CUDA_CHECK_RETURN(value) {											\
@@ -83,7 +152,7 @@ typedef float InversePdf;
 				cudaGetErrorString(_m_cudaStat), __LINE__, __FILE__);		\
 		exit(1);															\
 	} }
-GPU vec2 rand2(uvec2 key, uvec2 counter)
+GPU RandomPair rand2(RandomKey key, RandomCounter counter)
 {
 	philox4x32_ctr_t c={{}};
 	philox4x32_key_t k={{}};
@@ -94,7 +163,7 @@ GPU vec2 rand2(uvec2 key, uvec2 counter)
 	c.v[1] = counter.y;
 	philox4x32_ctr_t r = philox4x32(c, k);
 
-	return vec2(u01_open_open_32_24(r.v[0]), u01_open_open_32_24(r.v[1]));
+	return RandomPair(u01_open_open_32_24(r.v[0]), u01_open_open_32_24(r.v[1]));
 }
 struct Camera
 {
@@ -102,16 +171,16 @@ struct Camera
 	Camera(position<World> eye, position<World> target)
 	{
 		this->eye = eye;
-		view = glm::lookAt(eye, target, glm::vec3(0.f, 1.f, 0.f));
-		inv_view = glm::inverse(view);
-		proj = glm::perspective(60.f, 1.f, 1.f, 1000.f);
-		inv_proj = glm::inverse(proj);
+		view = ref::glm::lookAt(to_glm(eye), to_glm(target), to_glm(v3(0.f, 1.f, 0.f)));
+		inv_view = ref::glm::inverse(view);
+		proj = ref::glm::perspective(60.f, 1.f, 1.f, 1000.f);
+		inv_proj = ref::glm::inverse(proj);
 	}
 	position<World> eye;
-	mat4x4 inv_view;
-	mat4x4 inv_proj;
-	mat4x4 view;
-	mat4x4 proj;
+	ref::glm::mat4x4 inv_view;
+	ref::glm::mat4x4 inv_proj;
+	ref::glm::mat4x4 view;
+	ref::glm::mat4x4 proj;
 };
 struct Material
 {
@@ -168,7 +237,7 @@ struct Ray
 	direction<CS> dir;
 	GPU_CPU position<CS> at(float t)
 	{
-		return (position<CS>)(origin + dir * t);
+		return origin + dir * t;
 	}
 	GPU_CPU Ray<CS> offset_by(float t)
 	{
@@ -180,11 +249,11 @@ struct Ray
 		position<CS> l0 = this->origin;
 		direction<CS> n(0, -1, 0);
 		direction<CS> l = this->dir;
-		float d = glm::dot(p0 - l0, n) / l.dot(n);
+		float d = dot(p0 - l0, n) / dot(l, n);
 		if(d > 0)
 		{
-			hit->normal = n.negated();
-			hit->position = l0 + l * d;// l0 + d * l;
+			hit->normal = -n;
+			hit->position = l0 + l * d;
 			hit->t = d;
 			hit->material = plane.material;
 			return true;
@@ -193,10 +262,10 @@ struct Ray
 	}
 	GPU_CPU bool intersect_sphere(const Sphere& sphere, Hit<CS>* hit)
 	{	
-		glm::vec3 l = origin - sphere.origin;
+		offset<CS> l = origin - sphere.origin;
 		float a = 1;
-		float b = 2*this->dir.dot(l);
-		float c = glm::dot(l, l)-sphere.radius*sphere.radius;
+		float b = 2*dot(dir, l);
+		float c = dot(l, l)-sphere.radius*sphere.radius;
 
 		float discriminant = b*b - 4*a*c;
 		if(discriminant > 0)
@@ -247,43 +316,42 @@ struct Ray
 		return has_hit;
 	}
 };
-GPU uvec2 screen_xy()
+GPU SreenPosition screen_xy()
 {	
-	return uvec2(
+	return SreenPosition(
 		blockIdx.x * blockDim.x + threadIdx.x, 
 		blockIdx.y * blockDim.y + threadIdx.y);
 }
-GPU_CPU vec2 ndc(uvec2 screen_size, uvec2 screen_pos)
+GPU_CPU Ndc ndc(ref::glm::uvec2 screen_size, ref::glm::uvec2 screen_pos)
 {
-	return (vec2(screen_pos) / vec2(screen_size) - 0.5f) * vec2(2, -2);
+	return (ref::glm::vec2(screen_pos) / ref::glm::vec2(screen_size) - 0.5f) * ref::glm::vec2(2, -2);
 }
-GPU_CPU Ray<World> camera_ray(const Camera& camera, uvec2 screen_pos, uvec2 screen_size)
+GPU_CPU Ray<World> camera_ray(const Camera& camera, ref::glm::uvec2 screen_pos, ref::glm::uvec2 screen_size)
 {
-	glm::vec4 view = camera.inv_proj * glm::vec4(ndc(screen_size, screen_pos), -1, 1);
-	view = glm::vec4(glm::vec3(view) / view.w, 1.f);
-	position<World> world(glm::vec3(camera.inv_view * view));
+	ref::glm::vec4 view = camera.inv_proj * ref::glm::vec4(ndc(screen_size, screen_pos), -1, 1);
+	view = ref::glm::vec4(ref::glm::vec3(view) / view.w, 1.f);
+	auto result = ref::glm::vec3(camera.inv_view * view);
+	position<World> world(result.x, result.y, result.z);
 	return Ray<World>(world, direction<World>(camera.eye, world));
 }
 GPU_CPU direction<World> changeCoordSys(direction<World> n, direction<ZUp> dir)
 {	
-	glm::vec3 v3n = n;
-	glm::vec3 c = glm::cross(glm::vec3(0.f,0.f,1.f), v3n);
-	glm::vec4 q_content = glm::normalize(glm::vec4(c, 1 + n.dot(direction<World>(0.f,0.f,1.f))));
-	glm::quat q(q_content.w, glm::vec3(q_content));
-	direction<World> out_dir(glm::vec3(glm::rotate(q, dir)));
-	assert(out_dir.valid());
+	direction<World> c = cross(direction<World>(0.f,0.f,1.f), n);
+	ref::glm::vec4 q_content = ref::glm::normalize(ref::glm::vec4(to_glm(c), 1 + dot(n, direction<World>(0.f,0.f,1.f))));
+	ref::glm::quat q(q_content.w, ref::glm::vec3(q_content.x, q_content.y, q_content.z));
+	auto result = ref::glm::vec3(ref::glm::rotate(q, to_glm(dir)));
+	direction<World> out_dir(result.x, result.y, result.z);
 	return out_dir;
 }
-GPU_CPU direction<World> sampleUniformHemi(direction<World> n, vec2 u, float *inv_pdf)
+GPU_CPU direction<World> sampleUniformHemi(direction<World> n, ref::glm::vec2 u, float *inv_pdf)
 {
 	float a = sqrt(1 - u.y * u.y);
 	
 	direction<ZUp> wi(cos(2 * PI * u.x) * a, sin(2 * PI * u.x) * a, u.y);
 	*inv_pdf = 2 * PI; 
-	assert(wi.valid());
 	return changeCoordSys(n, wi);
 }
-GPU_CPU direction<World> sampleCosWeightedHemi(direction<World> n, vec2 u, float *inv_pdf)
+GPU_CPU direction<World> sampleCosWeightedHemi(direction<World> n, ref::glm::vec2 u, float *inv_pdf)
 {
 	float a = sqrt(1 - u.y);
 	float b = sqrt(u.y);
@@ -291,7 +359,7 @@ GPU_CPU direction<World> sampleCosWeightedHemi(direction<World> n, vec2 u, float
 	direction<ZUp> wi;
 	wi.z = b;//(cos(2 * PI * u.x) * a, sin(2 * PI * u.x) * a, b);
 	sincospif(2 * u.x, &wi.y, &wi.x);
-	wi *= glm::vec3(a, a, 1);
+	wi = wi * v3(a, a, 1);
 	//wi = direction<ZUp>(cos(2 * PI * u.x) * a, sin(2 * PI * u.x) * a, b);
 	*inv_pdf = PI / b; //cos(acos(sqrt(u.y))) / pi
 	return changeCoordSys(n, wi);

@@ -9,13 +9,13 @@
 
 #include "validate_importance_sampling.h"
 
-const int NUM_ITERATION = 300;
+const int NUM_ITERATION = 3;
 const int NUM_BOUNCES = 3;
 
-__global__ void gfx_kernel(vec4 *data, const Camera* camera, int width, int height) {
-	uvec2 screen_size(width, height);
-	uvec2 xy = screen_xy();
-	if(glm::any(glm::greaterThan(xy, screen_size - uvec2(1)))) return;
+__global__ void gfx_kernel(ref::glm::vec4 *data, const Camera* camera, int width, int height) {
+	ref::glm::uvec2 screen_size(width, height);
+	ref::glm::uvec2 xy = screen_xy();
+	if(ref::glm::any(ref::glm::greaterThan(xy, screen_size - ref::glm::uvec2(1)))) return;
 	Scene scene;
 	color value(0,0,0);
 	for(int iteration_idx = 0; iteration_idx < NUM_ITERATION; iteration_idx++)
@@ -30,14 +30,14 @@ __global__ void gfx_kernel(vec4 *data, const Camera* camera, int width, int heig
 				position<World> light_pos(0, 10, 0);
 				direction<World> light_dir(hit.position, light_pos);
 				//shade
-				value += throughput * saturate(light_dir.dot(hit.normal)) * hit.material.albedo;
+				value = value + throughput * saturate(dot(light_dir, hit.normal)) * hit.material.albedo;
 				if(iteration_idx != NUM_ITERATION - 1)
 				{
 					//make new ray
-					vec2 u = rand2(xy, uvec2(iteration_idx, bounce_idx));
+					ref::glm::vec2 u = rand2(xy, ref::glm::uvec2(iteration_idx, bounce_idx));
 					float inv_pdf;
 					direction<World> wi = sampleCosWeightedHemi(hit.normal, u, &inv_pdf);
-					throughput *= inv_pdf * hit.material.albedo * wi.dot(hit.normal);
+					throughput = throughput * inv_pdf * hit.material.albedo * dot(wi, hit.normal);
 					ray = Ray<World>(hit.position, wi).offset_by(RAY_EPSILON);
 				}
 			}
@@ -47,7 +47,7 @@ __global__ void gfx_kernel(vec4 *data, const Camera* camera, int width, int heig
 			}
 		}
 	}
-	data[xy.y * width + xy.x] = vec4(value / (float)NUM_ITERATION, 1);
+	data[xy.y * width + xy.x] = ref::glm::vec4(to_glm(value / (float)NUM_ITERATION), 1);
 }
 
 
@@ -59,12 +59,12 @@ int main(int argc, char* const argv[]) {
 	Catch::Main( argc, argv );
 #else
 
-	vec4 *d = NULL;
+	ref::glm::vec4 *d = NULL;
 	Camera *camera_ptr = NULL;
-	vec4* odata = new vec4[WIDTH * HEIGHT];
+	ref::glm::vec4* odata = new ref::glm::vec4[WIDTH * HEIGHT];
 
 	Camera camera(position<World>(0,1,-4), position<World>(0,0,1));
-	CUDA_CHECK_RETURN(cudaMalloc((void**) &d, sizeof(vec4) * WIDTH * HEIGHT));
+	CUDA_CHECK_RETURN(cudaMalloc((void**) &d, sizeof(ref::glm::vec4) * WIDTH * HEIGHT));
 	CUDA_CHECK_RETURN(cudaMalloc((void**) &camera_ptr, sizeof(Camera)));
 	CUDA_CHECK_RETURN(cudaMemcpy(camera_ptr, &camera, sizeof(Camera), cudaMemcpyHostToDevice));
 	dim3 threadPerBlock(8, 8, 1);
@@ -83,10 +83,10 @@ int main(int argc, char* const argv[]) {
 	{
 		for(int i = 0; i < WIDTH; i++)
 		{
-			vec4 col = odata[j * WIDTH + i];
+			ref::glm::vec4 col = odata[j * WIDTH + i];
 			col /= 1.f + col;
 			col *= 255;
-			uvec4 ucolor(col);
+			ref::glm::uvec4 ucolor(col);
 			image.set_pixel(i, j, ucolor.x, ucolor.y, ucolor.z);
 		}
 	}
@@ -100,19 +100,19 @@ TEST_CASE("camera/camera_ray", "standard camera_ray")
 {
 	{
 		Camera camera(position<World>(0.f,0.f,0.f), position<World>(0, 0, -100));
-		uvec2 screen_size(5, 5);
+		ref::glm::uvec2 screen_size(5, 5);
 		{
-			Ray<World> ray = camera_ray(camera, uvec2(2, 2), screen_size);
+			Ray<World> ray = camera_ray(camera, ref::glm::uvec2(2, 2), screen_size);
 			REQUIRE(close_to(ray.origin.z, -1));
 		}
 		{
-			Ray<World> ray = camera_ray(camera, uvec2(0, 0), screen_size);
+			Ray<World> ray = camera_ray(camera, ref::glm::uvec2(0, 0), screen_size);
 			REQUIRE(ray.origin.x < 0);
 			REQUIRE(ray.origin.y > 0);	
 			REQUIRE(close_to(ray.origin.z, -1));
 		}
 		{
-			Ray<World> ray = camera_ray(camera, uvec2(4, 4), screen_size);
+			Ray<World> ray = camera_ray(camera, ref::glm::uvec2(4, 4), screen_size);
 			REQUIRE(ray.origin.x > 0);
 			REQUIRE(ray.origin.y < 0);	
 			REQUIRE(close_to(ray.origin.z, -1));
@@ -131,7 +131,7 @@ TEST_CASE("diffuse/sample_uniform", "sample hemi")
 	};
 	{
 		auto a = [&](RandomPair u, InversePdf* inv_pdf) -> direction<World> {
-			return direction<World>(sampleUniformHemi(direction<World>(0, 0, 1), vec2(u), (float*)inv_pdf));			
+			return direction<World>(sampleUniformHemi(direction<World>(0, 0, 1), ref::glm::vec2(u), (float*)inv_pdf));			
 		};
 		auto invPdfFunc = [](NormalizedSphericalCS cs)-> float {
 			return 2 * PI;
@@ -140,7 +140,7 @@ TEST_CASE("diffuse/sample_uniform", "sample hemi")
 	}
 	{
 		auto a = [&](RandomPair u, InversePdf* inv_pdf) -> direction<World> {
-			return direction<World>(sampleCosWeightedHemi(direction<World>(0, 0, 1), vec2(u), (float*)inv_pdf));			
+			return direction<World>(sampleCosWeightedHemi(direction<World>(0, 0, 1), ref::glm::vec2(u), (float*)inv_pdf));			
 		};
 		auto invPdfFunc = [](NormalizedSphericalCS cs)-> float {
 			return PI / cos(cs.x);
@@ -158,6 +158,6 @@ TEST_CASE("intersect/intersect_plane", "hits plane everywhere")
 		Hit<World> hit;
 		REQUIRE(ray.intersect_plane(plane, &hit));
 		REQUIRE(hit.t == 1);
-		REQUIRE(glm::all(glm::equal(hit.normal, vec3(0.f,1.f,0.f))));
+		REQUIRE(hit.normal.y == 1.f);
 	}
 }
