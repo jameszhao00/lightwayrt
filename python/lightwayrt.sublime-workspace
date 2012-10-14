@@ -1,0 +1,179 @@
+{
+	"auto_complete":
+	{
+		"selected_items":
+		[
+		]
+	},
+	"buffers":
+	[
+	],
+	"build_system": "",
+	"command_palette":
+	{
+		"height": 0.0,
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"console":
+	{
+		"height": 0.0
+	},
+	"distraction_free":
+	{
+		"menu_visible": true,
+		"show_minimap": false,
+		"show_open_files": false,
+		"show_tabs": false,
+		"side_bar_visible": false,
+		"status_bar_visible": false
+	},
+	"file_history":
+	[
+		"/C/Users/zhaoz3/Documents/lightway/assets/validation/t_validation1.mtl",
+		"/C/Users/zhaoz3/Downloads/pbrt_src_1.02_reorganized_20071111/_pbrt_src_1.02_reorganized_20071111/integrators/bdpt/bdpt5.cpp",
+		"/C/Users/zhaoz3/Dropbox/gfx/gfx/Debug/shaders/ssr.hlsl",
+		"/C/Users/zhaoz3/Dropbox/blackstone xpresshr",
+		"/C/Program Files (x86)/NETGEAR/WNA1100/Driver/WIN764/netathurx.inf",
+		"/C/UDK/UDK-2012-05/UDKGame/Config/DefaultEngineUDK.ini",
+		"/C/UDK/UDK-2012-05/UDKGame/Config/UDKGame.ini",
+		"/C/Users/zhaoz3/Downloads/CryENGINE_PC_v3_4_0_3696_freeSDK/system.cfg",
+		"/C/Users/zhaoz3/Documents/lightway/assets/validation/diffuse_validation5.obj",
+		"/C/Users/zhaoz3/Downloads/pbrt_src_1.02_reorganized_20071111/_pbrt_src_1.02_reorganized_20071111/integrators/bdpt/BidirectionalPathTracing.cpp",
+		"/C/Users/zhaoz3/Downloads/pbrt_src_1.02_reorganized_20071111/_pbrt_src_1.02_reorganized_20071111/integrators/bidirectional.cpp",
+		"/C/Users/zhaoz3/Downloads/pbrt_src_1.02_reorganized_20071111/_pbrt_src_1.02_reorganized_20071111/integrators/bdpt/bdpt.h",
+		"/C/Users/zhaoz3/Downloads/pbrt_src_1.02_reorganized_20071111/_pbrt_src_1.02_reorganized_20071111/integrators/bdpt/bdpt4.cpp",
+		"/C/Users/zhaoz3/Downloads/pbrt_src_1.02_reorganized_20071111/_pbrt_src_1.02_reorganized_20071111/integrators/bdpt/bdpt1.cpp",
+		"/C/Program Files (x86)/Kindergarten/resources/shaders/engine/deferredRendering/lightMaskWritePointLightFragment.shader",
+		"/C/Program Files (x86)/Kindergarten/resources/shaders/engine/HDR/eyeAdaptationFragment.shader",
+		"/C/Program Files (x86)/Kindergarten/resources/shaders/raytracedGlassFragment.shader",
+		"/C/Program Files (x86)/Kindergarten/resources/shaders/basicRaytracedFragment.shader",
+		"/C/Users/zhaoz3/Dropbox/gfx/gfx/Debug/gfx.exe",
+		"/C/Users/zhaoz3/Documents/lightway/assets/validation/t_validation1.obj",
+		"/C/Users/zhaoz3/Documents/lightway/todo.txt",
+		"/C/Users/zhaoz3/Dropbox/raytracing/lightway/todo.txt",
+		"/C/Users/zhaoz3/Documents/lightway/readme.txt",
+		"/C/Users/zhaoz3/Dropbox/raytracing/lightway/assets/validation/caustics_validation1.mtl",
+		"/C/Users/zhaoz3/Dropbox/raytracing/lightway/assets/validation/spec_validation1.mtl",
+		"/C/Users/zhaoz3/Dropbox/raytracing/lightway/assets/validation/spec_validation1.obj",
+		"/C/Users/zhaoz3/Dropbox/raytracing/QtTest/QtTest.vcxproj",
+		"/C/Users/zhaoz3/Dropbox/raytracing/lightway/lightway.vcxproj",
+		"/C/Users/zhaoz3/Dropbox/raytracing/QtTest/qttest.qrc",
+		"/C/Users/zhaoz3/Dropbox/raytracing/QtTest/QtTest.vcxproj.user",
+		"/C/Downloads/modo601_win/Crack/install.txt",
+		"/C/Users/zhaoz3/Downloads/pbrt-v2-src/pbrt-v2/scenes/cornell.pbrt",
+		"/C/Users/zhaoz3/Downloads/pbrt-v2-src/pbrt-v2/scenes/bunny.pbrt"
+	],
+	"find":
+	{
+		"height": 43.0
+	},
+	"find_in_files":
+	{
+		"height": 0.0,
+		"where_history":
+		[
+		]
+	},
+	"find_state":
+	{
+		"case_sensitive": false,
+		"find_history":
+		[
+			"looka",
+			"%panaso",
+			"mymod",
+			"package",
+			"evalp",
+			"evalpdf",
+			"evalpdfan",
+			"genera",
+			"qt",
+			"moc",
+			"qt",
+			"global nam",
+			"globals",
+			"keyword"
+		],
+		"highlight": true,
+		"in_selection": false,
+		"preserve_case": false,
+		"regex": false,
+		"replace_history":
+		[
+		],
+		"reverse": false,
+		"show_context": true,
+		"use_buffer2": true,
+		"whole_word": false,
+		"wrap": true
+	},
+	"groups":
+	[
+		{
+			"sheets":
+			[
+			]
+		}
+	],
+	"incremental_find":
+	{
+		"height": 0.0
+	},
+	"input":
+	{
+		"height": 0.0
+	},
+	"layout":
+	{
+		"cells":
+		[
+			[
+				0,
+				0,
+				1,
+				1
+			]
+		],
+		"cols":
+		[
+			0.0,
+			1.0
+		],
+		"rows":
+		[
+			0.0,
+			1.0
+		]
+	},
+	"menu_visible": true,
+	"replace":
+	{
+		"height": 0.0
+	},
+	"save_all_on_build": true,
+	"select_file":
+	{
+		"height": 0.0,
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_project":
+	{
+		"height": 0.0,
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"show_minimap": true,
+	"show_open_files": false,
+	"show_tabs": true,
+	"side_bar_visible": true,
+	"side_bar_width": 150.0,
+	"status_bar_visible": true
+}
