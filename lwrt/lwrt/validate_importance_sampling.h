@@ -1,5 +1,5 @@
 #pragma once
-/*
+
 #include <functional>
 #include "glm/glm.hpp"
 using namespace glm;
@@ -7,7 +7,7 @@ using namespace std;
 
 template<int NumThetaBins, int NumPhiBins>
 float validate_importance_sampling(
-	function<direction<WorldCS>(RandomPair, InversePdf*)> rand_to_xyz,
+	function<direction<World>(RandomPair, InversePdf*)> rand_to_xyz,
 	function<RandomPair(void)> generate_rand_nums_func,
 	function<float(NormalizedSphericalCS)> invPdfFunc,
 	long num_samples)
@@ -27,7 +27,9 @@ float validate_importance_sampling(
 	for(int sample_idx = 0; sample_idx < num_samples; sample_idx++)
 	{
 		InversePdf inv_pdf;
-		auto theta_phi = spherical(rand_to_xyz(generate_rand_nums_func(), &inv_pdf));
+		direction<World> xyz_dir = rand_to_xyz(generate_rand_nums_func(), &inv_pdf);
+		assert(xyz_dir.valid());
+		auto theta_phi = spherical(xyz_dir);
 		theta_phi.y += PI; //[-pi, pi] to [0, 2pi]
 		int theta_bin_idx = floor((theta_phi.x / ThetaRange) * NumThetaBins);
 		int phi_bin_idx = floor((theta_phi.y / PhiRange) * NumPhiBins);
@@ -88,4 +90,3 @@ float validate_importance_sampling(
 	assert(chi_squared < 300);
 	return 0;
 }
-*/

@@ -24,12 +24,13 @@ enum CoordinateSystem
 {
 	World,
 	Local,
-	ZUp,
-	Unknown
+	ZUp
 };
 struct color : glm::vec3 
 {
 	GPU_CPU color() : glm::vec3(0.f,0.f,0.f) { }
+	GPU_CPU color(const glm::vec3& other) : glm::vec3(other) { }
+	GPU_CPU color(const color& other) : glm::vec3(other.x, other.y, other.z) { }
 	GPU_CPU color(float x, float y, float z) : glm::vec3(x,y,z) { }
 };
 
@@ -38,7 +39,8 @@ template<CoordinateSystem CS>
 struct position : glm::vec3
 {
 	GPU_CPU position() : glm::vec3() { }
-	GPU_CPU position(glm::vec3 v) : glm::vec3(v) { }
+	GPU_CPU position(const glm::vec3& v) : glm::vec3(v) { }
+	GPU_CPU position(const position& v) : glm::vec3(v.x, v.y, v.z) { }
 	GPU_CPU position(float x, float y, float z) : glm::vec3(x,y,z) { }
 };
 
@@ -46,7 +48,8 @@ template<CoordinateSystem CS>
 struct direction : glm::vec3
 {
 	GPU_CPU direction() : glm::vec3() { }
-	GPU_CPU direction(glm::vec3 v) : glm::vec3(v) { }
+	GPU_CPU direction(const glm::vec3& v) : glm::vec3(v) { }
+	GPU_CPU direction(const direction& v) : glm::vec3(v.x, v.y, v.z) { }
 	GPU_CPU direction(const position<CS>& a, const position<CS>& b)
 		: glm::vec3(glm::normalize(b - a)) { }
 	GPU_CPU direction(float x, float y, float z) : glm::vec3(x,y,z) { }
@@ -61,14 +64,14 @@ struct direction : glm::vec3
 	}
 	GPU_CPU bool valid() const
 	{
-		return glm::abs(this->length() - 1.f) < 0.0000001f;
+		return glm::abs(sqrt(this->dot(*this)) - 1.f) < 0.00001f;
 	}
 };
 typedef glm::mat4x4 mat4x4;
 typedef glm::uvec2 uvec2;
 typedef glm::uvec4 uvec4;
 typedef glm::vec2 vec2;
-typedef glm::vec4 vec4;
+//typedef glm::vec4 vec4;
 typedef glm::vec2 NormalizedSphericalCS;
 typedef glm::vec2 RandomPair;
 typedef float InversePdf;
@@ -112,8 +115,8 @@ struct Camera
 };
 struct Material
 {
-	GPU_CPU Material() { }
-	GPU_CPU Material(color p_albedo) : albedo(p_albedo) { }
+	GPU_CPU Material() : albedo() { }
+	GPU_CPU Material(const color& p_albedo) : albedo(p_albedo) { }
 	color albedo;	
 };
 struct Sphere
@@ -141,7 +144,7 @@ struct Scene
 	InfiniteHorizontalPlane planes[NUM_PLANES];
 	GPU_CPU Scene( ) 
 	{
-		spheres[0] = Sphere(position<World>(-1,0,0), 1, Material(color(.7,1.f, .8f)));
+		spheres[0] = Sphere(position<World>(-1,0,0), 1, Material(color(.7f,1.f, .8f)));
 		spheres[1] = Sphere(position<World>(1,0,0), 1, Material(color(1,.7f, .8f)));
 
 		planes[0] = InfiniteHorizontalPlane(0, Material(color(1,1,1)));
@@ -256,8 +259,8 @@ GPU_CPU vec2 ndc(uvec2 screen_size, uvec2 screen_pos)
 }
 GPU_CPU Ray<World> camera_ray(const Camera& camera, uvec2 screen_pos, uvec2 screen_size)
 {
-	vec4 view = camera.inv_proj * vec4(ndc(screen_size, screen_pos), -1, 1);
-	view = vec4(glm::vec3(view) / view.w, 1.f);
+	glm::vec4 view = camera.inv_proj * glm::vec4(ndc(screen_size, screen_pos), -1, 1);
+	view = glm::vec4(glm::vec3(view) / view.w, 1.f);
 	position<World> world(glm::vec3(camera.inv_view * view));
 	return Ray<World>(world, direction<World>(camera.eye, world));
 }
@@ -291,7 +294,6 @@ GPU_CPU direction<World> sampleCosWeightedHemi(direction<World> n, vec2 u, float
 	wi *= glm::vec3(a, a, 1);
 	//wi = direction<ZUp>(cos(2 * PI * u.x) * a, sin(2 * PI * u.x) * a, b);
 	*inv_pdf = PI / b; //cos(acos(sqrt(u.y))) / pi
-	assert(wi.valid());
 	return changeCoordSys(n, wi);
 }
 GPU_CPU float pdfCosWeightedHemi(float theta)

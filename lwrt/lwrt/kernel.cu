@@ -9,7 +9,7 @@
 
 #include "validate_importance_sampling.h"
 
-const int NUM_ITERATION = 30;
+const int NUM_ITERATION = 300;
 const int NUM_BOUNCES = 3;
 
 __global__ void gfx_kernel(vec4 *data, const Camera* camera, int width, int height) {
@@ -83,10 +83,10 @@ int main(int argc, char* const argv[]) {
 	{
 		for(int i = 0; i < WIDTH; i++)
 		{
-			vec4 color = odata[j * WIDTH + i];
-			color /= 1.f + color;
-			color *= 255;
-			uvec4 ucolor(color);
+			vec4 col = odata[j * WIDTH + i];
+			col /= 1.f + col;
+			col *= 255;
+			uvec4 ucolor(col);
 			image.set_pixel(i, j, ucolor.x, ucolor.y, ucolor.z);
 		}
 	}
@@ -119,7 +119,7 @@ TEST_CASE("camera/camera_ray", "standard camera_ray")
 		}
 	}
 }
-/*
+
 #include <random>
 TEST_CASE("diffuse/sample_uniform", "sample hemi") 
 {	
@@ -130,8 +130,8 @@ TEST_CASE("diffuse/sample_uniform", "sample hemi")
 		return RandomPair(normalized_dist(rng), normalized_dist(rng));	
 	};
 	{
-		auto a = [&](RandomPair u, InversePdf* inv_pdf) -> direction<WorldCS> {
-			return direction<WorldCS>(sampleUniformHemi(direction<WorldCS>(0, 0, 1), vec2(u), (float*)inv_pdf));			
+		auto a = [&](RandomPair u, InversePdf* inv_pdf) -> direction<World> {
+			return direction<World>(sampleUniformHemi(direction<World>(0, 0, 1), vec2(u), (float*)inv_pdf));			
 		};
 		auto invPdfFunc = [](NormalizedSphericalCS cs)-> float {
 			return 2 * PI;
@@ -139,8 +139,8 @@ TEST_CASE("diffuse/sample_uniform", "sample hemi")
 		validate_importance_sampling<10, 10>(a, b, invPdfFunc, 1000000);
 	}
 	{
-		auto a = [&](RandomPair u, InversePdf* inv_pdf) -> direction<WorldCS> {
-			return direction<WorldCS>(sampleCosWeightedHemi(direction<WorldCS>(0, 0, 1), vec2(u), (float*)inv_pdf));			
+		auto a = [&](RandomPair u, InversePdf* inv_pdf) -> direction<World> {
+			return direction<World>(sampleCosWeightedHemi(direction<World>(0, 0, 1), vec2(u), (float*)inv_pdf));			
 		};
 		auto invPdfFunc = [](NormalizedSphericalCS cs)-> float {
 			return PI / cos(cs.x);
@@ -154,11 +154,10 @@ TEST_CASE("intersect/intersect_plane", "hits plane everywhere")
 {
 	InfiniteHorizontalPlane plane(0, Material(color(1,1,1)));
 	{
-		Ray<WorldCS> ray(position<WorldCS>(0,1,0), direction<WorldCS>(0,-1,0));
-		Hit<WorldCS> hit;
+		Ray<World> ray(position<World>(0,1,0), direction<World>(0,-1,0));
+		Hit<World> hit;
 		REQUIRE(ray.intersect_plane(plane, &hit));
 		REQUIRE(hit.t == 1);
 		REQUIRE(glm::all(glm::equal(hit.normal, vec3(0.f,1.f,0.f))));
 	}
 }
-*/
