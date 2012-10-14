@@ -2,11 +2,12 @@
 
 #include <functional>
 #include "glm/glm.hpp"
+#include "util.h"
 using namespace std;
 
 template<int NumThetaBins, int NumPhiBins>
 float validate_importance_sampling(
-	function<direction<World>(RandomPair, InversePdf*)> rand_to_xyz,
+	function<direction<World>(RandomPair, InverseProjectedPdf*)> rand_to_xyz,
 	function<RandomPair(void)> generate_rand_nums_func,
 	function<float(NormalizedSphericalCS)> invPdfFunc,
 	long num_samples)
@@ -25,7 +26,7 @@ float validate_importance_sampling(
 	}
 	for(int sample_idx = 0; sample_idx < num_samples; sample_idx++)
 	{
-		InversePdf inv_pdf;
+		InverseProjectedPdf inv_pdf;
 		direction<World> xyz_dir = rand_to_xyz(generate_rand_nums_func(), &inv_pdf);
 		assert(xyz_dir.is_normalized());
 		auto theta_phi = spherical(xyz_dir);
@@ -37,7 +38,7 @@ float validate_importance_sampling(
 		assert(1.f/inv_pdf > 0);
 		double this_ratio = 1/(++bins[theta_bin_idx][phi_bin_idx]);
 		double new_bin_pdf = 
-			this_ratio * (1.f/inv_pdf) 
+			this_ratio * (1.f/inv_pdf/dot(xyz_dir, v3(0,0,1)))
 			+ (1-this_ratio) * (bins_pdf[theta_bin_idx][phi_bin_idx]);
 		bins_pdf[theta_bin_idx][phi_bin_idx] = new_bin_pdf;
 		assert(sample_idx >= 0);
@@ -62,7 +63,8 @@ float validate_importance_sampling(
 						/ NumThetaBins * ThetaRange;
 					float phi = (l / INTEGRATION_DIVISIONS + half_integ_step + j) 
 						/ NumPhiBins * PhiRange;
-					float pdf = 1.f / invPdfFunc(NormalizedSphericalCS(theta, phi));
+					float pdf = 1.f / invPdfFunc(NormalizedSphericalCS(theta, phi))
+						* cos(theta);
 					float area = (1.f / NumThetaBins * ThetaRange) 
 						* (1.f / NumPhiBins * PhiRange);
 					integratedPdf += pdf * area * sin(theta);
