@@ -25,6 +25,12 @@ enum CoordinateSystem
 	ZUp
 };
 
+
+GPU_CPU bool close_to(float test, float expected, float epsilon = 0.000001f)
+{
+	return abs(test - expected) < epsilon;
+}
+
 struct v3
 {
 	float x,y,z;	
@@ -98,6 +104,7 @@ struct offset : v3
 	GPU_CPU offset<CS> operator+(const offset<CS>& rhs) const { return v3_add(*this, rhs); }
 	GPU_CPU offset<CS> operator-(const offset<CS>& rhs) const { return v3_sub(*this, rhs); }
 	GPU_CPU offset& operator=(float v) { set(v); return *this;}
+	GPU_CPU float length() const { return v3_len(*this); }
 };
 template<CoordinateSystem CS>
 struct direction : v3
@@ -137,7 +144,6 @@ GPU_CPU position<CS> operator-(const position<CS>& lhs, const offset<CS>& rhs)
 
 
 typedef ref::glm::vec2 NormalizedSphericalCS;
-typedef ref::glm::vec2 RandomPair;
 typedef ref::glm::uvec2 RandomKey;
 typedef ref::glm::uvec2 RandomCounter;
 typedef ref::glm::uvec2 SreenPosition;
@@ -152,6 +158,8 @@ typedef float InversePdf;
 				cudaGetErrorString(_m_cudaStat), __LINE__, __FILE__);		\
 		exit(1);															\
 	} }
+
+typedef ref::glm::vec2 RandomPair;
 GPU RandomPair rand2(RandomKey key, RandomCounter counter)
 {
 	philox4x32_ctr_t c={{}};
@@ -292,7 +300,27 @@ struct Ray
 		}
 		return false;		
 	}
-	GPU_CPU bool intersect_scene(const Scene& scene, Hit<CS>* hit)
+	GPU_CPU bool intersect_shadow(const Scene& scene, float expected_t)
+	{
+		for(int i = 0; i < NUM_SPHERES; i++)
+		{
+			Hit<CS> tempHit;
+			if(intersect_sphere(scene.spheres[i], &tempHit) && !close_to(tempHit.t, expected_t))
+			{
+				return true;
+			}
+		}
+		for(int i = 0; i < NUM_PLANES; i++)
+		{
+			Hit<CS> tempHit;
+			if(intersect_plane(scene.planes[i], &tempHit) && !close_to(tempHit.t, expected_t))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+	GPU_CPU bool intersect(const Scene& scene, Hit<CS>* hit)
 	{
 		bool has_hit = false;
 		for(int i = 0; i < NUM_SPHERES; i++)
@@ -372,10 +400,4 @@ template<CoordinateSystem CS>
 GPU_CPU NormalizedSphericalCS spherical(direction<CS> xyz) //returns theta, phi
 {
 	return NormalizedSphericalCS(acos(xyz.z), atan2(xyz.x, xyz.y));
-}
-
-
-GPU_CPU bool close_to(float test, float expected, float epsilon = 0.000001)
-{
-	return abs(test - expected) < epsilon;
 }

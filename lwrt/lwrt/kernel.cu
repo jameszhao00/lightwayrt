@@ -9,8 +9,8 @@
 
 #include "validate_importance_sampling.h"
 
-const int NUM_ITERATION = 3;
-const int NUM_BOUNCES = 3;
+const int NUM_ITERATION = 300;
+const int NUM_BOUNCES = 7;
 
 __global__ void gfx_kernel(ref::glm::vec4 *data, const Camera* camera, int width, int height) {
 	ref::glm::uvec2 screen_size(width, height);
@@ -18,26 +18,31 @@ __global__ void gfx_kernel(ref::glm::vec4 *data, const Camera* camera, int width
 	if(ref::glm::any(ref::glm::greaterThan(xy, screen_size - ref::glm::uvec2(1)))) return;
 	Scene scene;
 	color value(0,0,0);
+	Ray<World> ray0 = camera_ray(*camera, xy, screen_size);
 	for(int iteration_idx = 0; iteration_idx < NUM_ITERATION; iteration_idx++)
 	{
-		Ray<World> ray = camera_ray(*camera, xy, screen_size);
+		Ray<World> ray = ray0;
 		color throughput(1,1,1);
 		for(int bounce_idx = 0; bounce_idx < NUM_BOUNCES; bounce_idx++)
 		{
 			Hit<World> hit;
-			if(ray.intersect_scene(scene, &hit))
+			if(ray.intersect(scene, &hit))
 			{
-				position<World> light_pos(0, 10, 0);
+				position<World> light_pos(0, 2, 0);
 				direction<World> light_dir(hit.position, light_pos);
-				//shade
-				value = value + throughput * saturate(dot(light_dir, hit.normal)) * hit.material.albedo;
+				Ray<World> shadow_ray = Ray<World>(hit.position, light_dir).offset_by(RAY_EPSILON);
+				if(!shadow_ray.intersect_shadow(scene, (light_pos - shadow_ray.origin).length()))
+				{
+					value = value + throughput * saturate(dot(light_dir, hit.normal)) * hit.material.albedo;
+				}
+
 				if(iteration_idx != NUM_ITERATION - 1)
 				{
 					//make new ray
-					ref::glm::vec2 u = rand2(xy, ref::glm::uvec2(iteration_idx, bounce_idx));
+					RandomPair u = rand2(RandomKey(xy), RandomCounter(iteration_idx, bounce_idx));
 					float inv_pdf;
 					direction<World> wi = sampleCosWeightedHemi(hit.normal, u, &inv_pdf);
-					throughput = throughput * inv_pdf * hit.material.albedo * dot(wi, hit.normal);
+					throughput = throughput * inv_pdf * hit.material.albedo;// * dot(wi, hit.normal);
 					ray = Ray<World>(hit.position, wi).offset_by(RAY_EPSILON);
 				}
 			}
