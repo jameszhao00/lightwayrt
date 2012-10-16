@@ -2,6 +2,8 @@
 
 #include "cuda_runtime_api.h"
 
+struct Vec3Buffer;
+
 #define CUDA_CHECK_RETURN(value) {											\
 	cudaError_t _m_cudaStat = value;										\
 	if (_m_cudaStat != cudaSuccess) {										\
@@ -21,6 +23,7 @@ struct Kernel
 	void* pass_ptr;
 	cudaGraphicsResource* framebuffer_resource;
 	size_t output_byte_size;
+	Vec3Buffer* buffer;
+	//char* buffer;
 
-	char* buffer;
 };

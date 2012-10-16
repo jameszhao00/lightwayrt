@@ -104,6 +104,7 @@ struct color : v3
 	GPU_CPU color operator-(const color& rhs) const { return v3_sub(*this, rhs); }
 	GPU_CPU color operator*(float rhs) const { return v3_mul(*this, rhs); }
 	GPU_CPU color operator/(float rhs) const { return *this * (1.f/rhs); }
+	GPU_CPU color operator/(const color& rhs) const { return v3_mul(*this, rhs); }
 	GPU_CPU bool is_black() const { return x == 0 && y == 0 && z == 0; }
 };
 template<CoordinateSystem CS>

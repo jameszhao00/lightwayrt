@@ -10,6 +10,26 @@
 
 #include "validate_importance_sampling.h"
 
+struct Vec3Buffer
+{
+	float* x;
+	float* y;
+	float* z;
+	void init(int size) 
+	{
+		CUDA_CHECK_RETURN(cudaMalloc(&x, sizeof(float) * size));
+		CUDA_CHECK_RETURN(cudaMalloc(&y, sizeof(float) * size));
+		CUDA_CHECK_RETURN(cudaMalloc(&z, sizeof(float) * size));
+	}
+	GPU_CPU v3 get(int idx) const
+	{
+		return v3(x[idx], y[idx], z[idx]);
+	}
+	GPU_CPU void set(int idx, const v3& v)
+	{
+		x[idx] = v.x; y[idx] = v.y; z[idx] = v.z;
+	}
+};
 struct Pass
 {
 	Pass(int iteration_idx, int num_iterations, int num_bounces) 
@@ -18,9 +38,8 @@ struct Pass
 	int num_iterations;
 	int num_bounces;
 };
-
 surface<void, cudaSurfaceType2D> output_surf;
-GPU_ENTRY void gfx_kernel(ref::glm::vec4* buffer, const Camera* camera, const Scene* scene, const Pass* pass, int width, int height
+GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* scene, const Pass* pass, int width, int height
 #ifdef LW_CPU
 	, ref::glm::uvec2 xy
 #endif
@@ -102,14 +121,12 @@ GPU_ENTRY void gfx_kernel(ref::glm::vec4* buffer, const Camera* camera, const Sc
 
 		}
 	}
-	ref::glm::vec4 existing = buffer[linid];
+	color existing = buffer.get(linid);
 	float existing_weight = (float)pass->iteration_idx / (pass->iteration_idx + pass->num_iterations);
-	ref::glm::vec4 value_v4(value.x, value.y, value.z, 1);
-	ref::glm::vec4 combined = (value_v4 / (float)pass->num_iterations) * (1 - existing_weight) + existing * (existing_weight);
-	buffer[linid] = combined;
-	ref::glm::vec4 combined_tonemapped = combined / (1 + combined);
-	ref::glm::detail::tvec4<char> combined_tonemapped_char(ref::glm::floor(combined_tonemapped * 255));
-	//surf2Dwrite(make_uchar4(combined_tonemapped_char.x, combined_tonemapped_char.y, combined_tonemapped_char.z, 255), output_surf, xy.x*4 /*r8g8b8a8*/, xy.y);
+	color combined = (value / (float)pass->num_iterations) 
+		* (1 - existing_weight) + existing * (existing_weight);
+	buffer.set(linid, combined);
+	color combined_tonemapped = combined / (combined + color(1,1,1));
 	surf2Dwrite(make_float4(combined_tonemapped.x, combined_tonemapped.y, combined_tonemapped.z, 1), output_surf, xy.x*sizeof(float4), xy.y);
 }
 
@@ -119,8 +136,9 @@ void Kernel::setup(cudaGraphicsResource* output, int width, int height)
 	CUDA_CHECK_RETURN(cudaMalloc((void**) &camera_ptr, sizeof(Camera)));
 	CUDA_CHECK_RETURN(cudaMalloc((void**) &scene_ptr, sizeof(Scene)));
 	CUDA_CHECK_RETURN(cudaMalloc((void**) &pass_ptr, sizeof(Pass)));
-	
-	CUDA_CHECK_RETURN(cudaMalloc((void**) &buffer, sizeof(ref::glm::vec4) * width * height));
+	//CUDA_CHECK_RETURN(cudaMalloc((void**) &buffer, sizeof(ref::glm::vec4) * width * height));
+	buffer = new Vec3Buffer();
+	buffer->init(width * height);
 }
 void Kernel::execute(int iteration_idx, int iterations, int bounces, int width, int height)
 {	
@@ -140,7 +158,7 @@ void Kernel::execute(int iteration_idx, int iterations, int bounces, int width, 
 	dim3 threadPerBlock(16, 16, 1);
 	dim3 blocks((unsigned int)ceil(width / (float)threadPerBlock.x), 
 		(unsigned int)ceil(height / (float)threadPerBlock.y), 1);	
-	gfx_kernel<<<blocks, threadPerBlock>>>((ref::glm::vec4*)buffer, (Camera*)camera_ptr, (Scene*)scene_ptr, (Pass*)pass_ptr, width, height);
+	gfx_kernel<<<blocks, threadPerBlock>>>(*buffer, (Camera*)camera_ptr, (Scene*)scene_ptr, (Pass*)pass_ptr, width, height);
 	CUDA_CHECK_RETURN(cudaGraphicsUnmapResources(1, &framebuffer_resource));
 }
 /*
