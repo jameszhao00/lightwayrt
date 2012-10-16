@@ -93,10 +93,12 @@ GPU_CPU v3 v3_normalized(const v3& v) { return v3_mul(v, (1.f / v3_len(v))); }
 struct color : v3
 {
 	GPU_CPU color() : v3(0) { }
+	GPU_CPU color(const float4& v) : v3(v.x, v.y, v.z) { }
 	GPU_CPU color(const v3& v) : v3(v) { }
 	GPU_CPU color(float x, float y, float z) : v3(x,y,z) { }
 	GPU_CPU color operator*(v3 s) const { return v3_mul(*this, s); }
 	GPU_CPU color& operator=(float v) { set(v); return *this;}
+	GPU_CPU float4 to_f4() const { return make_float4(x, y, z, 1); }
 
 	GPU_CPU color operator+(const color& rhs) const { return v3_add(*this, rhs); }
 	GPU_CPU color operator-(const color& rhs) const { return v3_sub(*this, rhs); }
@@ -179,14 +181,6 @@ typedef ref::glm::vec2 Ndc;
 typedef ref::glm::vec2 Size;
 typedef float InverseProjectedPdf;
 typedef color InverseProjectedPdf3;
-
-#define CUDA_CHECK_RETURN(value) {											\
-	cudaError_t _m_cudaStat = value;										\
-	if (_m_cudaStat != cudaSuccess) {										\
-		fprintf(stderr, "Error %s at line %d in file %s\n",					\
-				cudaGetErrorString(_m_cudaStat), __LINE__, __FILE__);		\
-		exit(1);															\
-	} }
 
 typedef ref::glm::vec2 RandomPair;
 #ifndef LW_CPU 
@@ -292,13 +286,13 @@ struct Scene
 	Ring rings[NUM_RINGS];
 	GPU_CPU Scene( ) 
 	{
-		spheres[0] = Sphere(position<World>(2,0,0), 1, Material(color(.7f,1.f, .8f), color(0), false));
+		spheres[0] = Sphere(position<World>(3,0,0), 1, Material(color(.7f,1.f, .8f), color(0), false));
 		spheres[1] = Sphere(position<World>(1,0,0), 1, Material(color(1,.7f, .8f), color(0), false));
 
 		planes[0] = InfiniteHorizontalPlane(0, Material(color(1,1,1), color(0), false));
-		rings[0] = Ring(position<World>(0,0,0), 4, 1, Material(color(1,1,1), color(0), true));
+		rings[0] = Ring(position<World>(0,0,0), 4, .6, Material(color(1,1,1), color(0), true));
 
-		sphere_lights[0] = Sphere(position<World>(10, 3, 0), .5, Material(color(0), color(20), false));
+		sphere_lights[0] = Sphere(position<World>(10, 6, 0), 1.5, Material(color(0), color(2), false));
 	}
 	GPU_CPU position<World> sample_light(position<World> pos, RandomPair u, color* inv_proj_pdf) const
 	{

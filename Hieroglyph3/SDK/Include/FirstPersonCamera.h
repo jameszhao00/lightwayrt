@@ -24,14 +24,14 @@
 //--------------------------------------------------------------------------------
 namespace Glyph3
 {    
-    class FirstPersonCamera : public Camera, IEventListener
-    {
-    public:
-        FirstPersonCamera();
+	class FirstPersonCamera : public Camera, IEventListener
+	{
+	public:
+		FirstPersonCamera();
 		virtual ~FirstPersonCamera();
-        
-        virtual bool HandleEvent( IEvent* pEvent );
-        virtual std::wstring GetName();
+
+		virtual bool HandleEvent( IEvent* pEvent );
+		virtual std::wstring GetName();
 
 		bool pollMoved() 
 		{
@@ -40,37 +40,37 @@ namespace Glyph3
 			return tempMoved;
 		}
 		bool m_moved;
-    protected:
+	protected:
 
-        void Update();        
+		void Update();        
 
-        enum ControlKeys
-        {
-            ForwardKey = 0,
-            BackKey,
-            LeftKey,
-            RightKey,
-            UpKey,
-            DownKey,
-            SpeedUpKey,
+		enum ControlKeys
+		{
+			ForwardKey = 0,
+			BackKey,
+			LeftKey,
+			RightKey,
+			UpKey,
+			DownKey,
+			SpeedUpKey,
 
-            NumControlKeys
-        };
+			NumControlKeys
+		};
 
-        // Key bindings for camera movement
-        static const UINT KeyBindings[NumControlKeys];
+		// Key bindings for camera movement
+		static const UINT KeyBindings[NumControlKeys];
 
-        bool m_bPressedKeys[NumControlKeys];        
-        int m_iLastMouseX;
-        int m_iLastMouseY;
-        int m_iMouseDeltaX;
-        int m_iMouseDeltaY;
+		bool m_bPressedKeys[NumControlKeys];        
+		int m_iLastMouseX;
+		int m_iLastMouseY;
+		int m_iMouseDeltaX;
+		int m_iMouseDeltaY;
 
-        float m_fRotationX;
-        float m_fRotationY;
+		float m_fRotationX;
+		float m_fRotationY;
 
-        Timer timer;
-    };
+		Timer timer;
+	};
 };
 //--------------------------------------------------------------------------------
 #endif // FirstPersonCamera_h

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include "kernel.h"
 #include "util.h"
 #include "bitmap_image.hpp"
 #include "assert.h"
@@ -9,10 +10,17 @@
 
 #include "validate_importance_sampling.h"
 
-const int NUM_ITERATION = 900;
-const int NUM_BOUNCES = 3;
+struct Pass
+{
+	Pass(int iteration_idx, int num_iterations, int num_bounces) 
+		: iteration_idx(iteration_idx), num_iterations(num_iterations), num_bounces(num_bounces) { }
+	int iteration_idx;
+	int num_iterations;
+	int num_bounces;
+};
 
-GPU_ENTRY void gfx_kernel(ref::glm::vec4 *data, const Camera* camera, const Scene* scene, int width, int height
+surface<void, cudaSurfaceType2D> output_surf;
+GPU_ENTRY void gfx_kernel(ref::glm::vec4* buffer, const Camera* camera, const Scene* scene, const Pass* pass, int width, int height
 #ifdef LW_CPU
 	, ref::glm::uvec2 xy
 #endif
@@ -27,12 +35,12 @@ GPU_ENTRY void gfx_kernel(ref::glm::vec4 *data, const Camera* camera, const Scen
 	
 	color value(0,0,0);
 	ray<World> ray0 = camera_ray(*camera, xy, screen_size);
-	for(int iteration_idx = 0; iteration_idx < NUM_ITERATION; iteration_idx++)
+	for(int iteration_idx = pass->iteration_idx; iteration_idx < (pass->iteration_idx + pass->num_iterations); iteration_idx++)
 	{
 		bool use_implicit_light = true;
 		ray<World> eye_ray = ray0;
 		color throughput(1,1,1);
-		for(int bounce_idx = 0; bounce_idx < NUM_BOUNCES; bounce_idx++)
+		for(int bounce_idx = 0; bounce_idx < pass->num_bounces; bounce_idx++)
 		{
 			Hit<World> hit;
 			if(eye_ray.intersect(*scene, &hit, use_implicit_light))
@@ -41,7 +49,7 @@ GPU_ENTRY void gfx_kernel(ref::glm::vec4 *data, const Camera* camera, const Scen
 				{
 					if(!hit.material.is_specular)
 					{
-						RandomPair u = rand2(RandomKey(xy), RandomCounter(iteration_idx, NUM_BOUNCES + bounce_idx));
+						RandomPair u = rand2(RandomKey(xy), RandomCounter(iteration_idx, pass->num_bounces + bounce_idx));
 						color inv_light_pdf;
 						position<World> light_pos = scene->sample_light(hit.position, u, &inv_light_pdf);
 						direction<World> light_dir(hit.position, light_pos);
@@ -69,7 +77,7 @@ GPU_ENTRY void gfx_kernel(ref::glm::vec4 *data, const Camera* camera, const Scen
 					break;
 				}			
 
-				if(bounce_idx != NUM_BOUNCES - 1)
+				if(bounce_idx != pass->num_bounces - 1)
 				{
 					if(hit.material.is_specular)
 					{
@@ -94,11 +102,48 @@ GPU_ENTRY void gfx_kernel(ref::glm::vec4 *data, const Camera* camera, const Scen
 
 		}
 	}
-	
-	data[linid] = ref::glm::vec4(to_glm(value / (float)NUM_ITERATION), 1);
+	ref::glm::vec4 existing = buffer[linid];
+	float existing_weight = (float)pass->iteration_idx / (pass->iteration_idx + pass->num_iterations);
+	ref::glm::vec4 value_v4(value.x, value.y, value.z, 1);
+	ref::glm::vec4 combined = (value_v4 / (float)pass->num_iterations) * (1 - existing_weight) + existing * (existing_weight);
+	buffer[linid] = combined;
+	ref::glm::vec4 combined_tonemapped = combined / (1 + combined);
+	ref::glm::detail::tvec4<char> combined_tonemapped_char(ref::glm::floor(combined_tonemapped * 255));
+	//surf2Dwrite(make_uchar4(combined_tonemapped_char.x, combined_tonemapped_char.y, combined_tonemapped_char.z, 255), output_surf, xy.x*4 /*r8g8b8a8*/, xy.y);
+	surf2Dwrite(make_float4(combined_tonemapped.x, combined_tonemapped.y, combined_tonemapped.z, 1), output_surf, xy.x*sizeof(float4), xy.y);
 }
 
+void Kernel::setup(cudaGraphicsResource* output, int width, int height)
+{
+	framebuffer_resource = output;
+	CUDA_CHECK_RETURN(cudaMalloc((void**) &camera_ptr, sizeof(Camera)));
+	CUDA_CHECK_RETURN(cudaMalloc((void**) &scene_ptr, sizeof(Scene)));
+	CUDA_CHECK_RETURN(cudaMalloc((void**) &pass_ptr, sizeof(Pass)));
+	
+	CUDA_CHECK_RETURN(cudaMalloc((void**) &buffer, sizeof(ref::glm::vec4) * width * height));
+}
+void Kernel::execute(int iteration_idx, int iterations, int bounces, int width, int height)
+{	
+	Pass pass(iteration_idx, iterations, bounces);
+	Camera camera(position<World>(0,7,-5), position<World>(0,0,1));
+	Scene scene;
 
+	CUDA_CHECK_RETURN(cudaMemcpy(camera_ptr, &camera, sizeof(Camera), cudaMemcpyHostToDevice));
+	CUDA_CHECK_RETURN(cudaMemcpy(scene_ptr, &scene, sizeof(Scene), cudaMemcpyHostToDevice));
+	CUDA_CHECK_RETURN(cudaMemcpy(pass_ptr, &pass, sizeof(Pass), cudaMemcpyHostToDevice));
+
+	cudaArray_t framebuffer_ptr;
+	
+	CUDA_CHECK_RETURN(cudaGraphicsMapResources(1, &framebuffer_resource));
+	CUDA_CHECK_RETURN(cudaGraphicsSubResourceGetMappedArray(&framebuffer_ptr, framebuffer_resource, 0, 0));
+	CUDA_CHECK_RETURN(cudaBindSurfaceToArray(output_surf, framebuffer_ptr));
+	dim3 threadPerBlock(16, 16, 1);
+	dim3 blocks((unsigned int)ceil(width / (float)threadPerBlock.x), 
+		(unsigned int)ceil(height / (float)threadPerBlock.y), 1);	
+	gfx_kernel<<<blocks, threadPerBlock>>>((ref::glm::vec4*)buffer, (Camera*)camera_ptr, (Scene*)scene_ptr, (Pass*)pass_ptr, width, height);
+	CUDA_CHECK_RETURN(cudaGraphicsUnmapResources(1, &framebuffer_resource));
+}
+/*
 const int WIDTH = 600;
 const int HEIGHT = 600;
 
@@ -106,22 +151,24 @@ int main(int argc, char* const argv[]) {
 #ifdef LW_UNIT_TEST
 	Catch::Main( argc, argv );
 #else
-
 	ref::glm::vec4 *d = NULL;
 	Camera *camera_ptr = NULL;
 	Scene *scene_ptr= NULL;
 	ref::glm::vec4* odata = new ref::glm::vec4[WIDTH * HEIGHT];
-
+	Pass* pass_ptr = nullptr;
+	Pass pass(0, 600, 4);
 	Camera camera(position<World>(0,7,-5), position<World>(0,0,1));
 	Scene scene;
 	CUDA_CHECK_RETURN(cudaMalloc((void**) &d, sizeof(ref::glm::vec4) * WIDTH * HEIGHT));
 	CUDA_CHECK_RETURN(cudaMalloc((void**) &camera_ptr, sizeof(Camera)));
 	CUDA_CHECK_RETURN(cudaMalloc((void**) &scene_ptr, sizeof(Scene)));
+	CUDA_CHECK_RETURN(cudaMalloc((void**) &pass_ptr, sizeof(Pass)));
 	CUDA_CHECK_RETURN(cudaMemcpy(camera_ptr, &camera, sizeof(Camera), cudaMemcpyHostToDevice));
 	CUDA_CHECK_RETURN(cudaMemcpy(scene_ptr, &scene, sizeof(Scene), cudaMemcpyHostToDevice));
+	CUDA_CHECK_RETURN(cudaMemcpy(pass_ptr, &pass, sizeof(Pass), cudaMemcpyHostToDevice));
 	dim3 threadPerBlock(8, 8, 1);
 	dim3 blocks((unsigned int)ceil(WIDTH / (float)threadPerBlock.x), (unsigned int)ceil(HEIGHT / (float)threadPerBlock.y), 1);
-	gfx_kernel<<<blocks, threadPerBlock>>>(d, camera_ptr, scene_ptr, WIDTH, HEIGHT);
+	gfx_kernel<<<blocks, threadPerBlock>>>(d, camera_ptr, scene_ptr, pass_ptr, WIDTH, HEIGHT);
 
 	CUDA_CHECK_RETURN(cudaThreadSynchronize());	// Wait for the GPU launched work to complete
 	CUDA_CHECK_RETURN(cudaGetLastError());
@@ -147,6 +194,7 @@ int main(int argc, char* const argv[]) {
 #endif
 	return 0;
 }
+*/
 #ifdef LW_UNIT_TEST
 //tests
 TEST_CASE("camera/camera_ray", "standard camera_ray") 

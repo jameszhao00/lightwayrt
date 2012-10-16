@@ -42,7 +42,7 @@
 #include <D3Dcommon.h>
 #include <dxgi.h>
 #include <d3d11.h>
-#include <d3dCompiler.h>
+#include <D3Dcompiler.h>
 #include <d3dx11.h>
 //#include <D3DX10core.h>
 //#include <D3D11Shader.h>

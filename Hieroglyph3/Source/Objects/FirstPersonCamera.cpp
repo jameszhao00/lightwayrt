@@ -62,10 +62,8 @@ FirstPersonCamera::FirstPersonCamera() :    m_iLastMouseX( InvalidMousePos ),
                                             m_iMouseDeltaX( 0 ),
                                             m_iMouseDeltaY ( 0 ),
                                             m_fRotationX( 0.0f ),
-                                            m_fRotationY( 0.0f ),
-											m_moved(false)
+                                            m_fRotationY( 0.0f )
 {
-	timer.SetFixedTimeStep(1/60.f);
     for( UINT i = 0; i < NumControlKeys; ++i )
         m_bPressedKeys[i] = false;
 
@@ -164,7 +162,7 @@ void FirstPersonCamera::Update()
     timer.Update();
     float timeDelta = timer.Elapsed();    
 
-    float CamMoveSpeed = 1.0f * timeDelta;
+    float CamMoveSpeed = 10.0f * timeDelta;
     const float CamRotSpeed = 0.24f * timeDelta;    
 
     // Move the camera with keyboard input
@@ -176,39 +174,17 @@ void FirstPersonCamera::Update()
 
     // Move the camera with the keyboard
     if ( m_bPressedKeys[RightKey] )
-    {
-		position += rotation.GetRow( 0 ) * CamMoveSpeed;
-		this->m_moved = true;
-	}
+        position += rotation.GetRow( 0 ) * CamMoveSpeed;
     else if ( m_bPressedKeys[LeftKey] )
-    {
-		position -= rotation.GetRow( 0 ) * CamMoveSpeed;
-		this->m_moved = true;
-	}
+        position -= rotation.GetRow( 0 ) * CamMoveSpeed;
     if ( m_bPressedKeys[UpKey] )
-    {    
-		position += rotation.GetRow( 1 ) * CamMoveSpeed;
-		this->m_moved = true;
-	}
-
+        position += rotation.GetRow( 1 ) * CamMoveSpeed;
     else if ( m_bPressedKeys[DownKey] )
-    {    
-		position -= rotation.GetRow( 1 ) * CamMoveSpeed;
-		this->m_moved = true;
-	}
-
+        position -= rotation.GetRow( 1 ) * CamMoveSpeed;
     if ( m_bPressedKeys[ForwardKey] )
-    {    
-		position += rotation.GetRow( 2 ) * CamMoveSpeed;
-		this->m_moved = true;
-	}
-
+        position += rotation.GetRow( 2 ) * CamMoveSpeed;
     else if ( m_bPressedKeys[BackKey] )
-    {   
-		position -= rotation.GetRow( 2 ) * CamMoveSpeed;
-		this->m_moved = true;
-	}
-
+        position -= rotation.GetRow( 2 ) * CamMoveSpeed;
 
     // Rotate the camera with the mouse
     m_fRotationX += m_iMouseDeltaY * CamRotSpeed;

@@ -76,7 +76,7 @@ bool RenderApplication::ConfigureRenderingEngineComponents( UINT width, UINT hei
 		}
 
 		// If using the reference device, utilize a fixed time step for any animations.
-		m_pTimer->SetFixedTimeStep( 1.0f / 120.0f );
+		m_pTimer->SetFixedTimeStep( 1.0f / 10.0f );
 	}
 
 	// Create the window.
@@ -142,7 +142,6 @@ void RenderApplication::ShutdownRenderingEngineComponents()
 void RenderApplication::ShutdownRenderingSetup()
 {
 	SAFE_DELETE( m_pScene );
-	SAFE_DELETE( m_pCamera );
 }
 //--------------------------------------------------------------------------------
 bool RenderApplication::HandleEvent( IEvent* pEvent )
