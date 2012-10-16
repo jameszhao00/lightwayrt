@@ -145,6 +145,7 @@ bool App::ConfigureEngineComponents()
 //--------------------------------------------------------------------------------
 void App::ShutdownEngineComponents()
 {
+	cudaDeviceReset();
 	if ( m_pRenderer11 )
 	{
 		m_pRenderer11->Shutdown();
@@ -156,6 +157,8 @@ void App::ShutdownEngineComponents()
 		m_pWindow->Shutdown();
 		delete m_pWindow;
 	}
+
+	
 }
 //--------------------------------------------------------------------------------
 void App::Initialize()
