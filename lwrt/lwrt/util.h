@@ -298,9 +298,9 @@ struct Scene
 		spheres[1] = Sphere(position<World>(1,0,0), 1, Material(color(1,.7f, .8f), color(0), false));
 
 		planes[0] = InfiniteHorizontalPlane(0, Material(color(1,1,1), color(0), false));
-		rings[0] = Ring(position<World>(0,0,0), 4, .6, Material(color(1,1,1), color(0), true));
+		rings[0] = Ring(position<World>(0,0,0), 4, 1, Material(color(1,1,1), color(0), true));
 
-		sphere_lights[0] = Sphere(position<World>(10, 6, 0), 1.5, Material(color(0), color(2), false));
+		sphere_lights[0] = Sphere(position<World>(10, 6, 0), .5, Material(color(0), color(20), false));
 	}
 	GPU_CPU position<World> sample_light(position<World> pos, RandomPair u, color* inv_proj_pdf) const
 	{
