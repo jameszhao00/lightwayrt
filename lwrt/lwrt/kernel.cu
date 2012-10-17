@@ -88,15 +88,15 @@ GPU_ENTRY void transfer_image(Vec3Buffer new_buffer, Vec3Buffer existing_buffer,
 
 	color existing = existing_buffer.get(linid);
 	float existing_weight = (float)pass->iteration_idx / (pass->iteration_idx + pass->num_iterations);
-	color combined = (color(new_buffer.get(linid)) / (float)pass->num_iterations) *  /* HACK: */ 1;// (1 - existing_weight);
+	color combined = (color(new_buffer.get(linid)) / (float)pass->num_iterations) * (1 - existing_weight);
 	if(pass->iteration_idx > 0)
 	{
-		combined = combined + existing *  /* HACK: */ 1;//(existing_weight);
+		combined = combined + existing *  (existing_weight);
 	}
 	new_buffer.set(linid, v3(0,0,0));
-
+	
 	existing_buffer.set(linid, combined);
-	color combined_tonemapped = combined / (combined + color(1,1,1));
+	color combined_tonemapped = combined / (combined + color(1,1,1)) * 100;
 	surf2Dwrite(make_float4(combined_tonemapped.x, combined_tonemapped.y, combined_tonemapped.z, 1), output_surf, xy.x*sizeof(float4), xy.y);
 	
 }
@@ -117,8 +117,8 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 		iteration_idx < (pass->iteration_idx + pass->num_iterations); 
 		iteration_idx++)
 	{
-		Random rng(xy, RandomCounter(iteration_idx, 0));
 		
+		Random rng(xy, RandomCounter(iteration_idx, 0));
 		ray<World> light_ray;
 		InversePdf light_v0_ipdf;
 		light_ray.origin = sample_sphere(scene->sphere_lights[0], rng.next2(), &light_v0_ipdf);
@@ -146,16 +146,16 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 					ref::glm::uvec2 uv = world_to_screen(light_vn.position, *camera, width, height, &in_bounds, ndc);
 					if(in_bounds)
 					{
-						ray<World> eye_to_light_shadow_ray = ray<World>(camera->eye, light_vn.position)
+
+						ray<World> light_to_eye_shadow_ray = ray<World>(light_vn.position, camera->eye)
 							.offset_by(RAY_EPSILON);
-						if(!eye_to_light_shadow_ray.intersect_shadow(*scene, light_vn.position))
+						if(!light_to_eye_shadow_ray.intersect_shadow(*scene, camera->eye))
 						{							
-							float costheta_shadow_ev = dot(eye_to_light_shadow_ray.dir, camera->forward);
-							float costheta_shadow_lv = -dot(eye_to_light_shadow_ray.dir, light_vn.normal);
+							float costheta_shadow_ev = -dot(light_to_eye_shadow_ray.dir, camera->forward);
+							float costheta_shadow_lv = dot(light_to_eye_shadow_ray.dir, light_vn.normal);
 							float d = (light_vn.position - camera->eye).length();
 							float g = costheta_shadow_ev * costheta_shadow_lv / (d * d);
 							color value = light_throughput * light_vn.material.brdf() * g;	
-							
 							buffer.elementwise_atomic_add(uv.y * width + uv.x, value);
 							
 						}
@@ -177,6 +177,7 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 						direction<World> wi = sampleCosWeightedHemi(light_vn.normal, rng.next2(), &ippdf);
 						light_ray = ray<World>(light_vn.position, wi)
 							.offset_by(RAY_EPSILON);
+						//if(light_ray.dir.y > 0) break; /* HACK: */
 						light_throughput = light_throughput * ippdf * light_vn.material.brdf();
 					}
 				}
@@ -203,7 +204,7 @@ void Kernel::setup(cudaGraphicsResource* output, int width, int height)
 void Kernel::execute(int iteration_idx, int iterations, int bounces, int width, int height)
 {	
 	Pass pass(iteration_idx, iterations, bounces);
-	Camera camera(position<World>(0,7,-5), position<World>(0,0,1));
+	Camera camera(position<World>(0,9,-7), position<World>(0,0,1));
 	Scene scene;
 
 	CUDA_CHECK_RETURN(cudaMemcpy(camera_ptr, &camera, sizeof(Camera), cudaMemcpyHostToDevice));

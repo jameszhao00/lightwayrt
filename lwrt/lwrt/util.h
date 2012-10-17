@@ -279,13 +279,13 @@ GPU_CPU direction<World> changeCoordSys(direction<World> n, direction<ZUp> dir)
 }
 GPU_CPU position<World> sample_sphere(const Sphere& sphere, RandomPair u, InversePdf *inv_pdf)
 {
-	float a = sqrt(u.y * (1 - u.y));
+	float a = sqrtf(u.y * (1 - u.y));
 	*inv_pdf = 4 * PI * sphere.radius * sphere.radius;
 
 	return position<World>(
 		2 * sphere.radius * cosf(2 * PI * u.x) * a + sphere.origin.x, 
 		2 * sphere.radius * sinf(2 * PI * u.x) * a + sphere.origin.y,
-		u.y +  + sphere.origin.z);
+		sphere.radius * (1 - 2 * u.y) + sphere.origin.z);
 }
 GPU_CPU direction<World> sampleUniformHemi(direction<World> n, ref::glm::vec2 u, InverseProjectedPdf *inv_pdf)
 {
