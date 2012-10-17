@@ -187,6 +187,7 @@ typedef ref::glm::uvec2 RandomCounter;
 typedef ref::glm::uvec2 SreenPosition;
 typedef ref::glm::vec2 Ndc;
 typedef ref::glm::vec2 Size;
+typedef float InversePdf;
 typedef float InverseProjectedPdf;
 typedef color InverseProjectedPdf3;
 
@@ -217,8 +218,10 @@ struct Camera
 		inv_view = ref::glm::inverse(view);
 		proj = ref::glm::perspective(60.f, 1.f, 1.f, 1000.f);
 		inv_proj = ref::glm::inverse(proj);
+		forward = direction<World>(eye, target);
 	}
 	position<World> eye;
+	direction<World> forward;
 	ref::glm::mat4x4 inv_view;
 	ref::glm::mat4x4 inv_proj;
 	ref::glm::mat4x4 view;
@@ -273,6 +276,16 @@ GPU_CPU direction<World> changeCoordSys(direction<World> n, direction<ZUp> dir)
 	auto result = ref::glm::vec3(ref::glm::rotate(q, to_glm(dir)));
 	direction<World> out_dir(result.x, result.y, result.z);
 	return out_dir;
+}
+GPU_CPU position<World> sample_sphere(const Sphere& sphere, RandomPair u, InversePdf *inv_pdf)
+{
+	float a = sqrt(u.y * (1 - u.y));
+	*inv_pdf = 4 * PI * sphere.radius * sphere.radius;
+
+	return position<World>(
+		2 * sphere.radius * cosf(2 * PI * u.x) * a + sphere.origin.x, 
+		2 * sphere.radius * sinf(2 * PI * u.x) * a + sphere.origin.y,
+		u.y +  + sphere.origin.z);
 }
 GPU_CPU direction<World> sampleUniformHemi(direction<World> n, ref::glm::vec2 u, InverseProjectedPdf *inv_pdf)
 {
@@ -329,6 +342,8 @@ struct ray
 	GPU_CPU ray() { }
 	GPU_CPU ray(const position<CS>& p_origin, const direction<CS>& p_direction)
 		: origin(p_origin), dir(p_direction) { } 
+	GPU_CPU ray(const position<CS>& from, const position<CS>& to)
+		: origin(from), dir(from, to) { } 
 	position<CS> origin;
 	direction<CS> dir;
 	GPU_CPU position<CS> at(float t) const
