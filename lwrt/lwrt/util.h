@@ -57,6 +57,10 @@ struct v3
 	GPU_CPU v3(float x, float y, float z) : x(x), y(y), z(z) { }
 	GPU_CPU void set(float v) { x=v;y=v;z=v; }
 };
+GPU_CPU bool all_equal(const v3& a, const v3& b, float epsilon = 0.00000001f)
+{
+	return close_to(a.x, b.x, epsilon) && close_to(a.y, b.y, epsilon) && close_to(a.z, b.z, epsilon);
+}
 GPU_CPU v3 clamp(const v3& v, float min_val, float max_val)
 {
 	return v3(
@@ -87,6 +91,9 @@ GPU_CPU v3 v3_sub(const v3& lhs, const v3& rhs) { return v3_add(lhs, v3_neg(rhs)
 GPU_CPU v3 v3_mul(const v3& v, float m) { return v3(v.x*m,v.y*m,v.z*m); }
 GPU_CPU v3 v3_mul(const v3& a, const v3& b) { return v3(a.x*b.x,a.y*b.y,a.z*b.z); }
 
+GPU_CPU v3 v3_div(const v3& v, float m) { float inv = 1/m; return v3_mul(v, inv); }
+GPU_CPU v3 v3_div(const v3& a, const v3& b) { v3 inv(1/b.x, 1/b.y, 1/b.z); return v3_mul(a, inv); }
+
 GPU_CPU float v3_len(const v3& v) { return sqrt(dot(v, v)); }
 GPU_CPU v3 v3_normalized(const v3& v) { return v3_mul(v, (1.f / v3_len(v))); }
 
@@ -104,7 +111,7 @@ struct color : v3
 	GPU_CPU color operator-(const color& rhs) const { return v3_sub(*this, rhs); }
 	GPU_CPU color operator*(float rhs) const { return v3_mul(*this, rhs); }
 	GPU_CPU color operator/(float rhs) const { return *this * (1.f/rhs); }
-	GPU_CPU color operator/(const color& rhs) const { return v3_mul(*this, rhs); }
+	GPU_CPU color operator/(const color& rhs) const { return v3_div(*this, rhs); }
 	GPU_CPU bool is_black() const { return x == 0 && y == 0 && z == 0; }
 };
 template<CoordinateSystem CS>
