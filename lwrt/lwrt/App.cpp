@@ -92,6 +92,7 @@ bool App::ConfigureEngineComponents()
 	Config.SetWidth( m_pWindow->GetWidth() );
 	Config.SetHeight( m_pWindow->GetHeight() );
 	Config.SetOutputWindow( m_pWindow->GetHandle() );
+	Config.SetFormat(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
 	m_iSwapChain = m_pRenderer11->CreateSwapChain( &Config );
 	m_pWindow->SetSwapChain( m_iSwapChain );
 
@@ -244,7 +245,7 @@ void App::Update()
 	auto even = m_pTimer->FrameCount() % 2 == 0;
 
 	this->m_pRenderer11->PIXBeginEvent(L"cuda");
-	kernel.execute(m_numFrames * 10, 10, 3, m_width, m_height);
+	kernel.execute(m_numFrames * 10, 10, 4, m_width, m_height);
 
 	this->m_pRenderer11->PIXEndEvent();
 	// Send an event to everyone that a new frame has started.  This will be used

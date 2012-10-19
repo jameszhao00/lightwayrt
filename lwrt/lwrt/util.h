@@ -279,7 +279,7 @@ GPU_CPU direction<World> sampleUniformHemi(direction<World> n, ref::glm::vec2 u,
 	float a = sqrt(1 - u.y * u.y);
 
 	direction<ZUp> wi(cosf(2 * PI * u.x) * a, sinf(2 * PI * u.x) * a, u.y);
-	*inv_pdf = 2. * PI * acosf(wi.z);
+	*inv_pdf = 2. * PI * wi.z;
 	return changeCoordSys(n, wi);
 }
 #define NUM_SPHERES 2
@@ -294,6 +294,7 @@ struct Scene
 	Ring rings[NUM_RINGS];
 	GPU_CPU Scene( ) 
 	{
+
 		spheres[0] = Sphere(position<World>(3,0,0), 1, Material(color(.7f,1.f, .8f), color(0), false));
 		spheres[1] = Sphere(position<World>(1,0,0), 1, Material(color(1,.7f, .8f), color(0), false));
 
@@ -302,16 +303,18 @@ struct Scene
 
 		sphere_lights[0] = Sphere(position<World>(10, 6, 0), .5, Material(color(0), color(20), false));
 	}
-	GPU_CPU position<World> sample_light(position<World> pos, RandomPair u, color* inv_proj_pdf) const
-	{
+	GPU_CPU position<World> sample_light(position<World> pos, RandomPair u, 
+		color* inv_proj_pdf) const
+	{		
 		float hemi_inv_pdf;
 		direction<World> wi = sampleUniformHemi(direction<World>(sphere_lights[0].origin, pos), u, &hemi_inv_pdf);
 		float r_squared = sphere_lights[0].radius * sphere_lights[0].radius;
-		position<World> sample_pos = sphere_lights[0].origin + wi * sphere_lights[0].radius;;
-		*inv_proj_pdf = sphere_lights[0].material.emission 
+		position<World> sample_pos = sphere_lights[0].origin + wi * sphere_lights[0].radius;
+		*inv_proj_pdf = 
+			sphere_lights[0].material.emission 
 			* dot(wi, direction<World>(sample_pos, pos))
-			* hemi_inv_pdf 
-			* r_squared;
+			* 2 * PI * r_squared
+			* PI;
 		return sample_pos;
 	}
 };

@@ -73,15 +73,18 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 						RandomPair u = rand2(RandomKey(xy), RandomCounter(iteration_idx, pass->num_bounces + bounce_idx));
 						color inv_light_pdf;
 						position<World> light_pos = scene->sample_light(hit.position, u, &inv_light_pdf);
+						
 						direction<World> light_dir(hit.position, light_pos);
 
 						if(!ray<World>(hit.position, light_dir)
 							.offset_by(RAY_EPSILON)
 							.intersect_shadow(*scene, light_pos))
 						{
+							float d = (hit.position - light_pos).length();
 							value = value + throughput 
 								* clamp01(dot(light_dir, hit.normal)) 
 								* inv_light_pdf 
+								/ (d * d)
 								* hit.material.brdf();
 						}
 
@@ -110,7 +113,7 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 					{
 						RandomPair u = rand2(RandomKey(xy), RandomCounter(iteration_idx, bounce_idx));
 						InverseProjectedPdf ip_pdf;
-						direction<World> wi = sampleUniformHemi(hit.normal, u, &ip_pdf);
+						direction<World> wi = sampleCosWeightedHemi(hit.normal, u, &ip_pdf);
 						throughput = throughput * ip_pdf * hit.material.brdf();
 						eye_ray = ray<World>(hit.position, wi).offset_by(RAY_EPSILON);
 					}
@@ -148,7 +151,7 @@ void Kernel::setup(cudaGraphicsResource* output, int width, int height)
 void Kernel::execute(int iteration_idx, int iterations, int bounces, int width, int height)
 {	
 	Pass pass(iteration_idx, iterations, bounces);
-	Camera camera(position<World>(0,7,-5), position<World>(0,0,1));
+	Camera camera(position<World>(0,9,-7), position<World>(0,0,1));
 	Scene scene;
 
 	CUDA_CHECK_RETURN(cudaMemcpy(camera_ptr, &camera, sizeof(Camera), cudaMemcpyHostToDevice));
