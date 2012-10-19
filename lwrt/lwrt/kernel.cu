@@ -91,12 +91,12 @@ GPU_ENTRY void transfer_image(Vec3Buffer new_buffer, Vec3Buffer existing_buffer,
 	color combined = (color(new_buffer.get(linid)) / (float)pass->num_iterations) * (1 - existing_weight);
 	if(pass->iteration_idx > 0)
 	{
-		combined = combined + existing *  (existing_weight);
+		combined = combined + existing * (existing_weight);
 	}
 	new_buffer.set(linid, v3(0,0,0));
 	
 	existing_buffer.set(linid, combined);
-	color combined_tonemapped = combined / (combined + color(1,1,1)) * 100;
+	color combined_tonemapped = combined / (combined + color(1,1,1));
 	surf2Dwrite(make_float4(combined_tonemapped.x, combined_tonemapped.y, combined_tonemapped.z, 1), output_surf, xy.x*sizeof(float4), xy.y);
 	
 }
@@ -124,7 +124,7 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 		light_ray.origin = sample_sphere(scene->sphere_lights[0], rng.next2(), &light_v0_ipdf);
 		InverseProjectedPdf light_v0v1_ippdf;
 		light_ray.dir = sampleCosWeightedHemi(direction<World>(scene->sphere_lights[0].origin, light_ray.origin), rng.next2(), &light_v0v1_ippdf);
-		color light_throughput = scene->sphere_lights[0].material.emission * light_v0_ipdf * light_v0v1_ippdf * PI;
+		color light_throughput = scene->sphere_lights[0].material.emission * light_v0_ipdf * light_v0v1_ippdf;
 		light_ray = light_ray.offset_by(RAY_EPSILON);
 		for(int bounce_idx = 0; bounce_idx < pass->num_bounces; bounce_idx++)
 		{
@@ -155,7 +155,8 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 							float costheta_shadow_lv = dot(light_to_eye_shadow_ray.dir, light_vn.normal);
 							float d = (light_vn.position - camera->eye).length();
 							float g = costheta_shadow_ev * costheta_shadow_lv / (d * d);
-							color value = light_throughput * light_vn.material.brdf() * g;	
+							float we = (d * d) / (1 * costheta_shadow_ev * costheta_shadow_ev * costheta_shadow_ev);
+							color value = light_throughput * light_vn.material.brdf() * g * we;	
 							buffer.elementwise_atomic_add(uv.y * width + uv.x, value);
 							
 						}
