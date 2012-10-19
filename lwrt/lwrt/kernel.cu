@@ -61,12 +61,12 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 		bool use_implicit_light = true;
 		ray<World> eye_ray = ray0;
 		color throughput(1,1,1);
-		for(int bounce_idx = 0; bounce_idx < pass->num_bounces; bounce_idx++)
+		for(int bounce_idx = 0; bounce_idx < (pass->num_bounces + 1); bounce_idx++)
 		{
 			Hit<World> hit;
 			if(eye_ray.intersect(*scene, &hit, use_implicit_light))
 			{
-				if(hit.material.emission.is_black())
+				if(hit.material.emission.is_black() && (bounce_idx < pass->num_bounces))
 				{
 					if(!hit.material.is_specular)
 					{
@@ -99,25 +99,27 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 				{
 					value = value + throughput * hit.material.emission;
 					break;
-				}			
-
-				if(bounce_idx != pass->num_bounces - 1)
+				}		
+				if(bounce_idx == pass->num_bounces)
 				{
-					if(hit.material.is_specular)
-					{
-						throughput = throughput * hit.material.albedo;
-						eye_ray = ray<World>(hit.position, eye_ray.dir.reflect(hit.normal))
-							.offset_by(RAY_EPSILON);
-					}
-					else
-					{
-						RandomPair u = rand2(RandomKey(xy), RandomCounter(iteration_idx, bounce_idx));
-						InverseProjectedPdf ip_pdf;
-						direction<World> wi = sampleCosWeightedHemi(hit.normal, u, &ip_pdf);
-						throughput = throughput * ip_pdf * hit.material.brdf();
-						eye_ray = ray<World>(hit.position, wi).offset_by(RAY_EPSILON);
-					}
+					break;
 				}
+				
+				if(hit.material.is_specular)
+				{
+					throughput = throughput * hit.material.albedo;
+					eye_ray = ray<World>(hit.position, eye_ray.dir.reflect(hit.normal))
+						.offset_by(RAY_EPSILON);
+				}
+				else
+				{
+					RandomPair u = rand2(RandomKey(xy), RandomCounter(iteration_idx, bounce_idx));
+					InverseProjectedPdf ip_pdf;
+					direction<World> wi = sampleCosWeightedHemi(hit.normal, u, &ip_pdf);
+					throughput = throughput * ip_pdf * hit.material.brdf();
+					eye_ray = ray<World>(hit.position, wi).offset_by(RAY_EPSILON);
+				}
+				
 			}
 			else
 			{
