@@ -213,6 +213,8 @@ struct Camera
 	Camera() { }
 	Camera(position<World> eye, position<World> target)
 	{
+		fovy = 60;
+
 		this->eye = eye;
 		view = ref::glm::lookAt(to_glm(eye), to_glm(target), to_glm(v3(0.f, 1.f, 0.f)));
 		inv_view = ref::glm::inverse(view);
@@ -220,6 +222,7 @@ struct Camera
 		inv_proj = ref::glm::inverse(proj);
 		forward = direction<World>(eye, target);
 	}
+	float fovy;
 	position<World> eye;
 	direction<World> forward;
 	ref::glm::mat4x4 inv_view;
