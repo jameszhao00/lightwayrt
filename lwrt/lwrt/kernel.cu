@@ -170,7 +170,7 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 						direction<World> wi = sampleCosWeightedHemi(light_vn.normal, rng.next2(), &ippdf);
 						light_ray = ray<World>(light_vn.position, wi)
 							.offset_by(RAY_EPSILON);
-						//if(light_ray.dir.y > 0) break; /* HACK: */
+
 						light_throughput = light_throughput * ippdf * light_vn.material.brdf();
 					}
 				}
