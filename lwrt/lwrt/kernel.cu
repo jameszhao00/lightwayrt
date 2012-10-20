@@ -148,7 +148,7 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 							float costheta_shadow_lv = dot(light_to_eye_shadow_ray.dir, light_vn.normal);
 							float d = (light_vn.position - camera->eye).length();
 							float g = costheta_shadow_ev * costheta_shadow_lv / (d * d);
-							float a =  1;//2 * powf(tanf(0.5 * (camera->fovy / 180) * PI), 2);
+							float a =  2 * powf(tanf(0.5 * (camera->fovy / 180) * PI), 2);
 							float we = 1 / (a * costheta_shadow_ev * costheta_shadow_ev * costheta_shadow_ev);
 							color value = light_throughput * light_vn.material.brdf() * g * we;	
 							buffer.elementwise_atomic_add(uv.y * width + uv.x, value);
