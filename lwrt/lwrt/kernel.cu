@@ -97,7 +97,7 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 				}
 				else
 				{
-					value = value + throughput * hit.material.emission;
+					value = value + throughput * hit.material.emission * PI;
 					break;
 				}		
 				if(bounce_idx == pass->num_bounces)
