@@ -100,6 +100,19 @@ GPU_ENTRY void transfer_image(Vec3Buffer new_buffer, Vec3Buffer existing_buffer,
 	surf2Dwrite(make_float4(combined_tonemapped.x, combined_tonemapped.y, combined_tonemapped.z, 1), output_surf, xy.x*sizeof(float4), xy.y);
 	
 }
+GPU_CPU ref::glm::uvec2 component_image_position(int width, int height, int eye_verts_count, int light_verts_count, int component_size,
+	int original_x, int original_y)
+{
+	int center_x = width / 2;
+	int total_verts = eye_verts_count + light_verts_count; //starts at 3
+	int total_components = total_verts + 1; //4 images at 3 verts
+	int y_idx = total_verts - 3; //implicit path with length=1 = 2 verts...
+	int x_idx = light_verts_count;
+	int y = component_size * y_idx;
+	int x = center_x - (float)total_components / 2.f * component_size + eye_verts_count * component_size;
+	return ref::glm::uvec2(x, y) 
+		+ ref::glm::uvec2(ref::glm::vec2((float)original_x / width, (float)original_y / height) * ref::glm::vec2(component_size, component_size));
+}
 GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* scene, const Pass* pass, int width, int height
 #ifdef LW_CPU
 //	, ref::glm::uvec2 xy
@@ -152,7 +165,11 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 							float we = 1
 								/ (a * costheta_shadow_ev * costheta_shadow_ev * costheta_shadow_ev);
 							color value = light_throughput * light_vn.material.brdf() * g * we;	
-							buffer.elementwise_atomic_add(uv.y * width + uv.x, value);							
+							int component_size = 200;
+							ref::glm::uvec2 component_xy = component_image_position(width, height, 1, bounce_idx + 2, component_size, uv.x, uv.y);
+							/* FOR DEBUGGING */
+							value = value * (float)(component_size * component_size) / (width * height);
+							buffer.elementwise_atomic_add(component_xy.y * width + component_xy.x, value);
 						}
 					}
 				}

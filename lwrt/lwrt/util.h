@@ -1,5 +1,5 @@
 #pragma once
-#define RAY_EPSILON 0.0001f
+#define RAY_EPSILON 0.001f
 
 #ifdef LW_UNIT_TEST
 #define LW_CPU
@@ -218,7 +218,7 @@ struct Camera
 		this->eye = eye;
 		view = ref::glm::lookAt(to_glm(eye), to_glm(target), to_glm(v3(0.f, 1.f, 0.f)));
 		inv_view = ref::glm::inverse(view);
-		proj = ref::glm::perspective(60.f, 1.f, 1.f, 1000.f);
+		proj = ref::glm::perspective(fovy, 1.f, 1.f, 1000.f);
 		inv_proj = ref::glm::inverse(proj);
 		forward = direction<World>(eye, target);
 	}
@@ -295,7 +295,7 @@ GPU_CPU direction<World> sampleUniformHemi(direction<World> n, ref::glm::vec2 u,
 	float a = sqrt(1 - u.y * u.y);
 
 	direction<ZUp> wi(cosf(2 * PI * u.x) * a, sinf(2 * PI * u.x) * a, u.y);
-	*inv_pdf = 2. * PI * acosf(wi.z);
+	*inv_pdf = 2. * PI * wi.z;
 	return changeCoordSys(n, wi);
 }
 #define NUM_SPHERES 2
@@ -314,7 +314,7 @@ struct Scene
 		spheres[1] = Sphere(position<World>(1,0,0), 1, Material(color(1,.7f, .8f), color(0), false));
 
 		planes[0] = InfiniteHorizontalPlane(0, Material(color(1,1,1), color(0), false));
-		rings[0] = Ring(position<World>(0,100,0), 4, 1, Material(color(1,1,1), color(0), true));
+		rings[0] = Ring(position<World>(0,0,0), 4, 1, Material(color(1,1,1), color(0), true));
 
 		sphere_lights[0] = Sphere(position<World>(10, 6, 0), .5, Material(color(0), color(200), false));
 	}
@@ -323,11 +323,11 @@ struct Scene
 		float hemi_inv_pdf;
 		direction<World> wi = sampleUniformHemi(direction<World>(sphere_lights[0].origin, pos), u, &hemi_inv_pdf);
 		float r_squared = sphere_lights[0].radius * sphere_lights[0].radius;
-		position<World> sample_pos = sphere_lights[0].origin + wi * sphere_lights[0].radius;;
-		*inv_proj_pdf = sphere_lights[0].material.emission 
+		position<World> sample_pos = sphere_lights[0].origin + wi * sphere_lights[0].radius;
+		*inv_proj_pdf = 
+			sphere_lights[0].material.emission 
 			* dot(wi, direction<World>(sample_pos, pos))
-			* hemi_inv_pdf 
-			* r_squared;
+			* 2 * PI * r_squared;
 		return sample_pos;
 	}
 };

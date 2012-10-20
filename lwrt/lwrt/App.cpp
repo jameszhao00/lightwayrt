@@ -176,16 +176,6 @@ void App::Initialize()
 	//FilteredConfig.SetFormat(DXGI_FORMAT_R8G8B8A8_UNORM);
 	m_Output1 = m_pRenderer11->CreateTexture2D( &FilteredConfig, 0 );
 
-	// Create RenderEffectDX11 instances to utilize the DX11 pipeline for 
-	// processing data.  Both the standard rendering pipeline and the compute
-	// shader pipeline use the RenderEffect to configure itself.
-// 
-// 	m_pFilterEffect = new RenderEffectDX11();
-// 	m_pFilterEffect->SetComputeShader( m_pRenderer11->LoadShader( COMPUTE_SHADER, 
-// 		std::wstring( L"LightwayRT/TestCS.hlsl" ),
-// 		std::wstring( L"CSMAIN" ),
-// 		std::wstring( L"cs_5_0" ) ) );
-
 	m_pTextureEffect = new RenderEffectDX11();
 	m_pTextureEffect->SetVertexShader( m_pRenderer11->LoadShader( VERTEX_SHADER,
 		std::wstring( L"LightwayRT/TextureVS.hlsl" ),
@@ -244,7 +234,7 @@ void App::Update()
 	auto even = m_pTimer->FrameCount() % 2 == 0;
 
 	this->m_pRenderer11->PIXBeginEvent(L"cuda");
-	kernel.execute(m_numFrames * 10, 10, 1, m_width, m_height);
+	kernel.execute(m_numFrames * 10, 10, 4, m_width, m_height);
 
 	this->m_pRenderer11->PIXEndEvent();
 	// Send an event to everyone that a new frame has started.  This will be used
