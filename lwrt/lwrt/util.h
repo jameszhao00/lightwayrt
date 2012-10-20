@@ -1,5 +1,5 @@
 #pragma once
-#define RAY_EPSILON 0.0001f
+#define RAY_EPSILON 0.001f
 
 #ifdef LW_UNIT_TEST
 #define LW_CPU
