@@ -113,6 +113,7 @@ struct color : v3
 	GPU_CPU color operator/(float rhs) const { return *this * (1.f/rhs); }
 	GPU_CPU color operator/(const color& rhs) const { return v3_div(*this, rhs); }
 	GPU_CPU bool is_black() const { return x == 0 && y == 0 && z == 0; }
+	GPU_CPU float luminance() const { return 0.2126f * x + 0.7152f * y + 0.0722f * z; }
 };
 template<CoordinateSystem CS>
 struct position : v3
