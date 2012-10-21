@@ -43,11 +43,12 @@ struct ColorSample
 };
 struct Pass
 {
-	Pass(int iteration_idx, int num_iterations, int num_bounces) 
-		: iteration_idx(iteration_idx), num_iterations(num_iterations), num_bounces(num_bounces) { }
+	Pass(int iteration_idx, int num_iterations, int num_bounces, bool bdpt_debug) 
+		: iteration_idx(iteration_idx), num_iterations(num_iterations), num_bounces(num_bounces), bdpt_debug(bdpt_debug) { }
 	int iteration_idx;
 	int num_iterations;
 	int num_bounces;
+	bool bdpt_debug;
 };
 GPU_CPU ref::glm::uvec2 world_to_screen(position<World> world, 
 	const Camera& camera, 
@@ -165,11 +166,19 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 							float we = 1
 								/ (a * costheta_shadow_ev * costheta_shadow_ev * costheta_shadow_ev);
 							color value = light_throughput * light_vn.material.brdf() * g * we;	
-							int component_size = 200;
-							ref::glm::uvec2 component_xy = component_image_position(width, height, 1, bounce_idx + 2, component_size, uv.x, uv.y);
-							/* FOR DEBUGGING */
-							value = value * (float)(component_size * component_size) / (width * height);
-							buffer.elementwise_atomic_add(component_xy.y * width + component_xy.x, value);
+							
+
+							if(pass->bdpt_debug)
+							{
+								int component_size = 200;
+								ref::glm::uvec2 component_xy = component_image_position(width, height, 1, bounce_idx + 2, component_size, uv.x, uv.y);
+								value = value * (float)(component_size * component_size) / (width * height);
+								buffer.elementwise_atomic_add(component_xy.y * width + component_xy.x, value);
+							}
+							else
+							{								
+								buffer.elementwise_atomic_add(uv.y * width + uv.x, value);
+							}
 						}
 					}
 				}
@@ -213,9 +222,9 @@ void Kernel::setup(cudaGraphicsResource* output, int width, int height)
 	existing_buffer = new Vec3Buffer();
 	existing_buffer->init(width * height);
 }
-void Kernel::execute(int iteration_idx, int iterations, int bounces, int width, int height)
+void Kernel::execute(int iteration_idx, int iterations, int bounces, int width, int height, bool bdpt_debug)
 {	
-	Pass pass(iteration_idx, iterations, bounces);
+	Pass pass(iteration_idx, iterations, bounces, bdpt_debug);
 	Camera camera(position<World>(0,9,-7), position<World>(0,0,1));
 	Scene scene;
 
