@@ -150,15 +150,22 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 			
 			{		
 				{
-					float path_reuse_weight = 1.f / NUM_LIGHT_PATH_SHUFFLES;
+					bool is_valid_path[4] = {
+						bit_set(warp_light_ray_has_hit, (laneId() + 0) % warpSize),
+						bit_set(warp_light_ray_has_hit, (laneId() + 1) % warpSize),
+						bit_set(warp_light_ray_has_hit, (laneId() + 2) % warpSize), 
+						bit_set(warp_light_ray_has_hit, (laneId() + 3) % warpSize)
+					};
+					int valid_reuse_paths = is_valid_path[0] + is_valid_path[1] + is_valid_path[2] + is_valid_path[3];
+					float path_reuse_weight = 1.f / valid_reuse_paths;
 					for(int reuse_offset = 0; reuse_offset < NUM_LIGHT_PATH_SHUFFLES; reuse_offset++)
 					{						
-						if(!bit_set(warp_light_ray_has_hit, (laneId() + reuse_offset)) % warpSize) continue;
+						if(!is_valid_path[reuse_offset]) continue;
 
 						bool in_bounds;
 						ref::glm::vec2 ndc;
 						Hit<World> current_light_vtx = light_vtx.shuffle_up(reuse_offset);
-						ref::glm::uvec2 uv = world_to_screen(current_light_vtx.position, *camera, width, height, &in_bounds, ndc);						
+						ref::glm::uvec2 uv = world_to_screen(current_light_vtx.position, *camera, width, height, &in_bounds, ndc);					
 						if(!current_light_vtx.material.is_specular && in_bounds)
 						{						
 							ray<World> light_to_eye_shadow_ray = ray<World>(current_light_vtx.position, camera->eye)
