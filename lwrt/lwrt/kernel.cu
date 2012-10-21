@@ -43,11 +43,12 @@ struct ColorSample
 };
 struct Pass
 {
-	Pass(int iteration_idx, int num_iterations, int num_bounces) 
-		: iteration_idx(iteration_idx), num_iterations(num_iterations), num_bounces(num_bounces) { }
+	Pass(int iteration_idx, int num_iterations, int num_bounces, bool bdpt_debug) 
+		: iteration_idx(iteration_idx), num_iterations(num_iterations), num_bounces(num_bounces), bdpt_debug(bdpt_debug) { }
 	int iteration_idx;
 	int num_iterations;
 	int num_bounces;
+	bool bdpt_debug;
 };
 GPU_CPU ref::glm::uvec2 world_to_screen(position<World> world, 
 	const Camera& camera, 
@@ -113,6 +114,7 @@ GPU_CPU ref::glm::uvec2 component_image_position(int width, int height, int eye_
 	return ref::glm::uvec2(x, y) 
 		+ ref::glm::uvec2(ref::glm::vec2((float)original_x / width, (float)original_y / height) * ref::glm::vec2(component_size, component_size));
 }
+#define NUM_LIGHT_PATH_SHUFFLES 4
 GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* scene, const Pass* pass, int width, int height
 #ifdef LW_CPU
 //	, ref::glm::uvec2 xy
@@ -139,64 +141,80 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 		light_ray.dir = sampleCosWeightedHemi(direction<World>(scene->sphere_lights[0].origin, light_ray.origin), rng.next2(), &light_v0v1_ippdf);
 		color light_throughput = scene->sphere_lights[0].material.emission * light_v0_ipdf * light_v0v1_ippdf;
 		light_ray = light_ray.offset_by(RAY_EPSILON);
+		bool ray_terminated = false;
 		for(int bounce_idx = 0; bounce_idx < pass->num_bounces; bounce_idx++)
 		{
-			Hit<World> light_vn;
-			if(light_ray.intersect(*scene, &light_vn, false))
+			Hit<World> light_vtx;
+			bool light_ray_has_hit = !ray_terminated && light_ray.intersect(*scene, &light_vtx, false);
+			unsigned int warp_light_ray_has_hit = __ballot(light_ray_has_hit);
+			
 			{		
-				if(!light_vn.material.is_specular)
 				{
-					//unproject to camera u,v
-					bool in_bounds;
-					ref::glm::vec2 ndc;
-					ref::glm::uvec2 uv = world_to_screen(light_vn.position, *camera, width, height, &in_bounds, ndc);
-					if(in_bounds)
-					{
+					float path_reuse_weight = 1.f / NUM_LIGHT_PATH_SHUFFLES;
+					for(int reuse_offset = 0; reuse_offset < NUM_LIGHT_PATH_SHUFFLES; reuse_offset++)
+					{						
+						if(!bit_set(warp_light_ray_has_hit, (laneId() + reuse_offset)) % warpSize) continue;
 
-						ray<World> light_to_eye_shadow_ray = ray<World>(light_vn.position, camera->eye)
-							.offset_by(RAY_EPSILON);
-						if(!light_to_eye_shadow_ray.intersect_shadow(*scene, camera->eye))
-						{							
-							float costheta_shadow_ev = -dot(light_to_eye_shadow_ray.dir, camera->forward);
-							float costheta_shadow_lv = dot(light_to_eye_shadow_ray.dir, light_vn.normal);
-							float d = (light_vn.position - camera->eye).length();
-							float g = costheta_shadow_ev * costheta_shadow_lv / (d * d);
-							float a = powf(2 * tanf(0.5 * (camera->fovy / 180) * PI), 2);
-							float we = 1
-								/ (a * costheta_shadow_ev * costheta_shadow_ev * costheta_shadow_ev);
-							color value = light_throughput * light_vn.material.brdf() * g * we;	
-							int component_size = 200;
-							ref::glm::uvec2 component_xy = component_image_position(width, height, 1, bounce_idx + 2, component_size, uv.x, uv.y);
-							/* FOR DEBUGGING */
-							value = value * (float)(component_size * component_size) / (width * height);
-							buffer.elementwise_atomic_add(component_xy.y * width + component_xy.x, value);
+						bool in_bounds;
+						ref::glm::vec2 ndc;
+						Hit<World> current_light_vtx = light_vtx.shuffle_up(reuse_offset);
+						ref::glm::uvec2 uv = world_to_screen(current_light_vtx.position, *camera, width, height, &in_bounds, ndc);						
+						if(!current_light_vtx.material.is_specular && in_bounds)
+						{						
+							ray<World> light_to_eye_shadow_ray = ray<World>(current_light_vtx.position, camera->eye)
+								.offset_by(RAY_EPSILON);
+							if(!light_to_eye_shadow_ray.intersect_shadow(*scene, camera->eye))
+							{							
+								float costheta_shadow_ev = -dot(light_to_eye_shadow_ray.dir, camera->forward);
+								float costheta_shadow_lv = dot(light_to_eye_shadow_ray.dir, current_light_vtx.normal);
+								float d = (current_light_vtx.position - camera->eye).length();
+								float g = costheta_shadow_ev * costheta_shadow_lv / (d * d);
+								float a = powf(2 * tanf(0.5 * (camera->fovy / 180) * PI), 2);
+								float we = 1
+									/ (a * costheta_shadow_ev * costheta_shadow_ev * costheta_shadow_ev);
+								color value = light_throughput * current_light_vtx.material.brdf() * g * we;	
+								if(pass->bdpt_debug)
+								{
+									int component_size = 200;
+									ref::glm::uvec2 component_xy = component_image_position(width, height, 1, bounce_idx + 2, component_size, uv.x, uv.y);
+									value = value * (float)(component_size * component_size) / (width * height) * path_reuse_weight;
+									buffer.elementwise_atomic_add(component_xy.y * width + component_xy.x, value);
+								}
+								else
+								{								
+									buffer.elementwise_atomic_add(uv.y * width + uv.x, value * path_reuse_weight);
+								}
+							}
 						}
-					}
+					}					
 				}
+			}
+			if(light_ray_has_hit)
+			{
 				//next ray
 				if(bounce_idx < pass->num_bounces - 1)
 				{
-					if(light_vn.material.is_specular)
+					if(light_vtx.material.is_specular)
 					{
-						light_ray = ray<World>(light_vn.position, light_ray.dir.reflect(light_vn.normal))
+						light_ray = ray<World>(light_vtx.position, light_ray.dir.reflect(light_vtx.normal))
 							.offset_by(RAY_EPSILON);
-						light_throughput = light_throughput * light_vn.material.albedo; //unchanged
+						light_throughput = light_throughput * light_vtx.material.albedo; //unchanged
 					}
 					else
 					{
 						
 						InverseProjectedPdf ippdf;
-						direction<World> wi = sampleCosWeightedHemi(light_vn.normal, rng.next2(), &ippdf);
-						light_ray = ray<World>(light_vn.position, wi)
+						direction<World> wi = sampleCosWeightedHemi(light_vtx.normal, rng.next2(), &ippdf);
+						light_ray = ray<World>(light_vtx.position, wi)
 							.offset_by(RAY_EPSILON);
 
-						light_throughput = light_throughput * ippdf * light_vn.material.brdf();
+						light_throughput = light_throughput * ippdf * light_vtx.material.brdf();
 					}
 				}
 			}
 			else
 			{
-				break;
+				ray_terminated = true;
 			}
 		}
 	}
@@ -213,9 +231,9 @@ void Kernel::setup(cudaGraphicsResource* output, int width, int height)
 	existing_buffer = new Vec3Buffer();
 	existing_buffer->init(width * height);
 }
-void Kernel::execute(int iteration_idx, int iterations, int bounces, int width, int height)
+void Kernel::execute(int iteration_idx, int iterations, int bounces, int width, int height, bool bdpt_debug)
 {	
-	Pass pass(iteration_idx, iterations, bounces);
+	Pass pass(iteration_idx, iterations, bounces, bdpt_debug);
 	Camera camera(position<World>(0,9,-7), position<World>(0,0,1));
 	Scene scene;
 

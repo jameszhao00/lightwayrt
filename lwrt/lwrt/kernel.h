@@ -16,7 +16,7 @@ void unit_test();
 struct Kernel
 {
 	void setup(cudaGraphicsResource* output, int width, int height);
-	void execute(int iteration_idx, int iterations, int bounces, int width, int height);
+	void execute(int iteration_idx, int iterations, int bounces, int width, int height, bool bdpt_debug);
 
 	void* camera_ptr;
 	void* scene_ptr;

@@ -42,7 +42,16 @@ enum CoordinateSystem
 	Local,
 	ZUp
 };
-
+__device__ __forceinline__ unsigned int laneId()
+{
+	unsigned int ret;
+	asm("mov.u32 %0, %laneid;" : "=r"(ret) );
+	return ret;
+}
+GPU float shuffle_up_wrap(float var, int delta)
+{
+	return __shfl(var, laneId() % warpSize);
+}
 
 GPU_CPU bool close_to(float test, float expected, float epsilon = 0.000001f)
 {
@@ -56,6 +65,11 @@ struct v3
 	GPU_CPU v3(float xyz) : x(xyz), y(xyz), z(xyz) { }
 	GPU_CPU v3(float x, float y, float z) : x(x), y(y), z(z) { }
 	GPU_CPU void set(float v) { x=v;y=v;z=v; }
+	GPU v3 shuffle_up(unsigned int delta) const 
+	{
+		if(delta == 0) return *this;
+		return v3(shuffle_up_wrap(x, delta), shuffle_up_wrap(y, delta), shuffle_up_wrap(z, delta));
+	}
 };
 GPU_CPU bool all_equal(const v3& a, const v3& b, float epsilon = 0.00000001f)
 {
@@ -242,6 +256,11 @@ struct Material
 	{
 		return albedo / PI;
 	}
+	GPU Material shuffle_up(unsigned int delta) const 
+	{
+		if(delta == 0) return *this;
+		return Material(albedo.shuffle_up(delta), emission.shuffle_up(delta), shuffle_up_wrap(is_specular, delta));
+	}
 };
 struct Sphere
 {
@@ -338,6 +357,15 @@ struct Hit
 	position<CS> position;
 	Material material;
 	float t;
+	GPU Hit<CS> shuffle_up(unsigned int delta)
+	{
+		Hit<CS> result;
+		result.normal = normal.shuffle_up(delta);
+		result.position = position.shuffle_up(delta);
+		result.t = shuffle_up_wrap(t, delta);
+		result.material = material.shuffle_up(delta);
+		return result;
+	}
 };
 template<CoordinateSystem CS>
 struct ray
@@ -560,4 +588,10 @@ template<CoordinateSystem CS>
 GPU_CPU NormalizedSphericalCS spherical(direction<CS> xyz) //returns theta, phi
 {
 	return NormalizedSphericalCS(acosf(xyz.z), atan2f(xyz.x, xyz.y));
+}
+
+
+GPU_CPU bool bit_set(unsigned int x, int bit)
+{
+	return (x & (1 << bit));
 }
