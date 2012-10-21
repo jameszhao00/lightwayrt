@@ -157,14 +157,19 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 						bit_set(warp_light_ray_has_hit, (laneId() + 3) % warpSize)
 					};
 					int valid_reuse_paths = is_valid_path[0] + is_valid_path[1] + is_valid_path[2] + is_valid_path[3];
-					float path_reuse_weight = 1.f / valid_reuse_paths;
+					int valid_paths_across_warp = __popc(warp_light_ray_has_hit);
+					bool ignore_reuse_paths = valid_paths_across_warp < 5;
+					float path_reuse_weight = 1.f / (ignore_reuse_paths ? 1 : NUM_LIGHT_PATH_SHUFFLES);// valid_reuse_paths;
 					for(int reuse_offset = 0; reuse_offset < NUM_LIGHT_PATH_SHUFFLES; reuse_offset++)
-					{						
-						if(!is_valid_path[reuse_offset]) continue;
-
+					{				
+						if(reuse_offset > 0 && ignore_reuse_paths) break;
 						bool in_bounds;
 						ref::glm::vec2 ndc;
 						Hit<World> current_light_vtx = light_vtx.shuffle_up(reuse_offset);
+						
+						//must come after the shuffle
+						if(!is_valid_path[reuse_offset]) continue;
+
 						ref::glm::uvec2 uv = world_to_screen(current_light_vtx.position, *camera, width, height, &in_bounds, ndc);					
 						if(!current_light_vtx.material.is_specular && in_bounds)
 						{						

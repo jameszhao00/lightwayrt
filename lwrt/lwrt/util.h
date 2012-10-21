@@ -50,7 +50,9 @@ __device__ __forceinline__ unsigned int laneId()
 }
 GPU float shuffle_up_wrap(float var, int delta)
 {
-	return __shfl(var, laneId() % warpSize);
+	int target_laneId = (laneId() + delta);
+	target_laneId = (target_laneId > (warpSize - 1)) ? target_laneId - 32 : target_laneId;
+	return __shfl(var,  target_laneId);
 }
 
 GPU_CPU bool close_to(float test, float expected, float epsilon = 0.000001f)
@@ -333,6 +335,8 @@ struct Scene
 		spheres[1] = Sphere(position<World>(1,0,0), 1, Material(color(1,.7f, .8f), color(0), false));
 
 		planes[0] = InfiniteHorizontalPlane(0, Material(color(1,1,1), color(0), false));
+		//planes[1] = InfiniteHorizontalPlane(12, Material(color(1,1,1), color(0), false));
+
 		rings[0] = Ring(position<World>(0,0,0), 4, 1, Material(color(1,1,1), color(0), true));
 
 		sphere_lights[0] = Sphere(position<World>(10, 6, 0), .5, Material(color(0), color(200), false));
@@ -427,12 +431,12 @@ struct ray
 	{
 		position<CS> p0(0, plane.y, 0);
 		position<CS> l0 = this->origin;
-		direction<CS> n(0, -1, 0);
+		direction<CS> n(0, l0.y > p0.y ? 1 : -1, 0);
 		direction<CS> l = this->dir;
 		float d = dot(p0 - l0, n) / dot(l, n);
 		if(d > 0)
 		{
-			hit->normal = -n;
+			hit->normal = n;
 			hit->position = l0 + l * d;
 			hit->t = d;
 			hit->material = plane.material;
