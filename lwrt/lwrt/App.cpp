@@ -245,7 +245,12 @@ void App::Update()
 	auto even = m_pTimer->FrameCount() % 2 == 0;
 
 	this->m_pRenderer11->PIXBeginEvent(L"cuda");
-	kernel.execute(m_numFrames * 10, 10, 1, m_width, m_height);
+	
+	//if(m_pTimer->Runtime() < .3)
+	if(m_numFrames == 0)
+	{
+		kernel.execute(m_numFrames * 20, 20, 4, m_width, m_height, false);
+	}
 
 	this->m_pRenderer11->PIXEndEvent();
 	// Send an event to everyone that a new frame has started.  This will be used

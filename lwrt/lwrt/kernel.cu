@@ -41,6 +41,16 @@ struct Pass
 
 #ifndef LW_UNIT_TEST
 surface<void, cudaSurfaceType2D> output_surf;
+GPU RandomPair mutate_rand(Random& rng, RandomPair& u)
+{
+	//TODO: change this
+	RandomPair pair = u + (rng.next2() - 0.5f) / 5.f;
+	u.x = fmodf(u.x, 1.f);
+	u.y = fmodf(u.y, 1.f);
+	u = pair;
+	return pair;
+}
+#define MAX_PATH_VERTS 4
 GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* scene, const Pass* pass, int width, int height
 #ifdef LW_CPU
 //	, ref::glm::uvec2 xy
@@ -53,10 +63,10 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 #endif
 	if(ref::glm::any(ref::glm::greaterThan(xy, screen_size - ref::glm::uvec2(1)))) return;
 	int linid = xy.y * width + xy.x;
-	
-	color value(0,0,0);
-	ray<World> ray0 = camera_ray(*camera, xy, screen_size);
-	for(int iteration_idx = pass->iteration_idx; iteration_idx < (pass->iteration_idx + pass->num_iterations); iteration_idx++)
+	//TODO: add specular support
+	RandomPair u[MAX_PATH_VERTS];
+	Random rng(xy, RandomCounter(pass->iteration_idx, 0));
+	//do an initial walk
 	{
 		bool use_implicit_light = true;
 		ray<World> eye_ray = ray0;
