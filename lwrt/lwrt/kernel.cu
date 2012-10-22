@@ -133,29 +133,13 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 		ray<World> eye_ray = ray0;
 		color throughput(1,1,1);
 		color weight(0,0,0);
-		Hit<World> eye_v1;
-		bool eye_v1_exists = false;		
-		Hit<World> eye_v2;
-		bool eye_v2_exists = false;
-		Hit<World> hit;
-		for(int bounce_idx = 0; bounce_idx < pass->num_bounces; bounce_idx++)
+		for(int eye_vertex_idx = 0; eye_vertex_idx < pass->num_bounces; eye_vertex_idx++)
 		{
+			Hit<World> hit;
 			position<World> previous_hit_position = hit.position;
 			if(eye_ray.intersect(*scene, &hit))
 			{
-				if(bounce_idx == 0)
-				{
-					eye_v1 = hit;
-					eye_v1_exists = true;
-				}
-				else if(bounce_idx == 1)
-				{
-					eye_v2 = hit;
-					eye_v2_exists = true;	
-					float d = (previous_hit_position - hit.position).length();
-					throughput = throughput * 1.f / ( -dot(eye_ray.dir, hit.normal) / (d * d));
-				}
-				RandomPair u = rand2(RandomKey(xy), RandomCounter(iteration_idx, pass->num_bounces + bounce_idx));
+				RandomPair u = rand2(RandomKey(xy), RandomCounter(iteration_idx, pass->num_bounces + eye_vertex_idx));
 				color inv_light_pdf;
 				position<World> light_pos = scene->sample_light(hit.position, u, &inv_light_pdf);
 						
@@ -171,29 +155,16 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 						* inv_light_pdf 
 						/ (d * d)
 						* hit.material.brdf();
-					if(bounce_idx == 0)
-					{
-						summed = summed + addition;
-					}
-					else
-					{
-						weight = weight + addition;
-					}
+					summed = summed + addition;					
 				}
-				if(bounce_idx < pass->num_bounces - 1)
+				if(eye_vertex_idx < pass->num_bounces - 1)
 				{
-					RandomPair u = rand2(RandomKey(xy), RandomCounter(iteration_idx, bounce_idx));
+					RandomPair u = rand2(RandomKey(xy), RandomCounter(iteration_idx, eye_vertex_idx));
 					InverseProjectedPdf ip_pdf;
 					direction<World> wi = sampleCosWeightedHemi(hit.normal, u, &ip_pdf);
-					if(bounce_idx == 0)
-					{
-						//rest done in next pass...
-						throughput = ip_pdf * 1 / dot(wi, hit.normal);
-					}
-					else if(bounce_idx > 0)
-					{
-						throughput = throughput * ip_pdf * hit.material.brdf();
-					}
+					
+					throughput = throughput * ip_pdf * hit.material.brdf();
+					
 					eye_ray = ray<World>(hit.position, wi).offset_by(RAY_EPSILON);			
 				}
 			}
@@ -201,13 +172,6 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 			{
 				break;
 			}
-		}
-		if(eye_v2_exists)
-		{
-			direction<World> v1_to_v2(eye_v1.position, eye_v2.position);
-			float d = (eye_v1.position - eye_v2.position).length();
-			float g = dot(v1_to_v2, eye_v1.normal) * -dot(v1_to_v2, eye_v2.normal) / (d * d);
-			summed = summed + weight * g * eye_v1.material.brdf();
 		}
 	}
 	buffer.set(linid, summed);
