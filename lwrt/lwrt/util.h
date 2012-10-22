@@ -41,10 +41,12 @@ __device__ __forceinline__ unsigned int laneId()
 	asm("mov.u32 %0, %laneid;" : "=r"(ret) );
 	return ret;
 }
-GPU float shuffle_up_wrap(float var, int delta)
+template<typename T>
+GPU float shuffle_up_wrap(T var, int delta)
 {
 	int target_laneId = (laneId() + delta);
 	target_laneId = (target_laneId > (warpSize - 1)) ? target_laneId - 32 : target_laneId;
+	target_laneId = target_laneId < 0 ? target_laneId + 32 : target_laneId;
 	return __shfl(var,  target_laneId);
 }
 #define PI 3.1415926535897931e+0
@@ -68,7 +70,7 @@ struct v3
 	GPU_CPU v3(float xyz) : x(xyz), y(xyz), z(xyz) { }
 	GPU_CPU v3(float x, float y, float z) : x(x), y(y), z(z) { }
 	GPU_CPU void set(float v) { x=v;y=v;z=v; }
-	GPU v3 shuffle_up(unsigned int delta) const 
+	GPU v3 shuffle_up(int delta) const 
 	{
 		if(delta == 0) return *this;
 		return v3(shuffle_up_wrap(x, delta), shuffle_up_wrap(y, delta), shuffle_up_wrap(z, delta));
@@ -259,7 +261,7 @@ struct Material
 	{
 		return albedo / PI;
 	}
-	GPU Material shuffle_up(unsigned int delta) const 
+	GPU Material shuffle_up(int delta) const 
 	{
 		if(delta == 0) return *this;
 		return Material(albedo.shuffle_up(delta), emission.shuffle_up(delta), shuffle_up_wrap(is_specular, delta));
@@ -360,7 +362,7 @@ struct Hit
 	position<CS> position;
 	Material material;
 	float t;
-	GPU Hit<CS> shuffle_up(unsigned int delta)
+	GPU Hit<CS> shuffle_up(int delta)
 	{
 		Hit<CS> result;
 		result.normal = normal.shuffle_up(delta);

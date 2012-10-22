@@ -61,6 +61,6 @@ protected:
 	UINT m_width;
 	UINT m_height;
 	int m_numFrames;
-
+	float last_cleared_time;
 	Kernel kernel;
 };

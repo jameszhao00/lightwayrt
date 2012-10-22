@@ -133,10 +133,9 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 		ray<World> eye_ray = ray0;
 		color throughput(1,1,1);
 		color weight(0,0,0);
-		Hit<World> eye_v1;
-		bool eye_v1_exists = false;		
+		Hit<World> eye_v1;	
 		Hit<World> eye_v2;
-		bool eye_v2_exists = false;
+		int eye_v2_exists = false;
 		Hit<World> hit;
 		for(int bounce_idx = 0; bounce_idx < pass->num_bounces; bounce_idx++)
 		{
@@ -146,7 +145,6 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 				if(bounce_idx == 0)
 				{
 					eye_v1 = hit;
-					eye_v1_exists = true;
 				}
 				else if(bounce_idx == 1)
 				{
@@ -202,13 +200,28 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 				break;
 			}
 		}
-		if(eye_v2_exists)
+		color indirect_contrib(0,0,0);
+		int num_reuse = 1;
+		for(int i = 0; i < num_reuse; i++)
 		{
-			direction<World> v1_to_v2(eye_v1.position, eye_v2.position);
-			float d = (eye_v1.position - eye_v2.position).length();
-			float g = dot(v1_to_v2, eye_v1.normal) * -dot(v1_to_v2, eye_v2.normal) / (d * d);
-			summed = summed + weight * g * eye_v1.material.brdf();
+			
+			int delta = i;
+
+			int reuse_eye_exists = shuffle_up_wrap(eye_v2_exists, delta);
+			Hit<World> reuse_eye_v2 = eye_v2.shuffle_up(delta);
+
+			if(reuse_eye_exists && !ray<World>(eye_v1.position, direction<World>(eye_v1.position, reuse_eye_v2.position))
+					.offset_by(RAY_EPSILON)
+					.intersect_shadow(*scene, reuse_eye_v2.position))
+			{
+				direction<World> v1_to_v2(eye_v1.position, reuse_eye_v2.position);
+				float d = (eye_v1.position - reuse_eye_v2.position).length();
+				float g = dot(v1_to_v2, eye_v1.normal) * -dot(v1_to_v2, reuse_eye_v2.normal) / (d * d);
+				indirect_contrib = indirect_contrib + weight * g * eye_v1.material.brdf();
+			}
 		}
+		summed = summed + indirect_contrib * (1.f / num_reuse);
+
 	}
 	buffer.set(linid, summed);
 }

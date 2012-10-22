@@ -42,7 +42,7 @@ App AppInstance; // Provides an instance of the application
 
 
 //--------------------------------------------------------------------------------
-App::App() : m_numFrames(0)
+App::App() : m_numFrames(0), last_cleared_time(0)
 {
 	// Register for window based events here.
 	m_pEventMgr->AddEventListener( WINDOW_RESIZE, this );
@@ -235,10 +235,16 @@ void App::Update()
 
 	this->m_pRenderer11->PIXBeginEvent(L"cuda");
 	//if(m_numFrames == 0)//if(m_pTimer->Runtime() < .3)
+	float start_time = m_pTimer->Runtime();
+	float diff = 0;
+	int idx = 0;
+	//while((diff = (m_pTimer->Runtime() - start_time)) < .03)
 	{
-		kernel.execute(m_numFrames * 10, 10, 4, m_width, m_height, false);
+		kernel.execute(m_numFrames * 3, 3, 3, m_width, m_height, false);
+		m_pTimer->Update();
+		idx++;
 	}
-
+	m_numFrames++;
 	this->m_pRenderer11->PIXEndEvent();
 	// Send an event to everyone that a new frame has started.  This will be used
 	// in later examples for using the material system with render views.
