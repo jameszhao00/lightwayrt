@@ -35,6 +35,18 @@ namespace ref
 #include "glm/gtc/matrix_transform.hpp"
 }
 
+__device__ __forceinline__ unsigned int laneId()
+{
+	unsigned int ret;
+	asm("mov.u32 %0, %laneid;" : "=r"(ret) );
+	return ret;
+}
+GPU float shuffle_up_wrap(float var, int delta)
+{
+	int target_laneId = (laneId() + delta);
+	target_laneId = (target_laneId > (warpSize - 1)) ? target_laneId - 32 : target_laneId;
+	return __shfl(var,  target_laneId);
+}
 #define PI 3.1415926535897931e+0
 enum CoordinateSystem
 {
@@ -56,6 +68,11 @@ struct v3
 	GPU_CPU v3(float xyz) : x(xyz), y(xyz), z(xyz) { }
 	GPU_CPU v3(float x, float y, float z) : x(x), y(y), z(z) { }
 	GPU_CPU void set(float v) { x=v;y=v;z=v; }
+	GPU v3 shuffle_up(unsigned int delta) const 
+	{
+		if(delta == 0) return *this;
+		return v3(shuffle_up_wrap(x, delta), shuffle_up_wrap(y, delta), shuffle_up_wrap(z, delta));
+	}
 };
 GPU_CPU bool all_equal(const v3& a, const v3& b, float epsilon = 0.00000001f)
 {
@@ -242,6 +259,11 @@ struct Material
 	{
 		return albedo / PI;
 	}
+	GPU Material shuffle_up(unsigned int delta) const 
+	{
+		if(delta == 0) return *this;
+		return Material(albedo.shuffle_up(delta), emission.shuffle_up(delta), shuffle_up_wrap(is_specular, delta));
+	}
 };
 struct Sphere
 {
@@ -314,7 +336,7 @@ struct Scene
 		spheres[1] = Sphere(position<World>(1,0,0), 1, Material(color(1,.7f, .8f), color(0), false));
 
 		planes[0] = InfiniteHorizontalPlane(0, Material(color(1,1,1), color(0), false));
-		rings[0] = Ring(position<World>(0,0,0), 4, 1, Material(color(1,1,1), color(0), true));
+		rings[0] = Ring(position<World>(0,0,0), 4, 1, Material(color(1,1,1), color(0), false));
 
 		sphere_lights[0] = Sphere(position<World>(10, 6, 0), .5, Material(color(0), color(200), false));
 	}
@@ -326,7 +348,7 @@ struct Scene
 		position<World> sample_pos = sphere_lights[0].origin + wi * sphere_lights[0].radius;
 		*inv_proj_pdf = 
 			sphere_lights[0].material.emission 
-			* dot(wi, direction<World>(sample_pos, pos))
+			* clamp01(dot(wi, direction<World>(sample_pos, pos)))
 			* 2 * PI * r_squared;
 		return sample_pos;
 	}
@@ -338,6 +360,15 @@ struct Hit
 	position<CS> position;
 	Material material;
 	float t;
+	GPU Hit<CS> shuffle_up(unsigned int delta)
+	{
+		Hit<CS> result;
+		result.normal = normal.shuffle_up(delta);
+		result.position = position.shuffle_up(delta);
+		result.t = shuffle_up_wrap(t, delta);
+		result.material = material.shuffle_up(delta);
+		return result;
+	}
 };
 template<CoordinateSystem CS>
 struct ray
@@ -560,4 +591,9 @@ template<CoordinateSystem CS>
 GPU_CPU NormalizedSphericalCS spherical(direction<CS> xyz) //returns theta, phi
 {
 	return NormalizedSphericalCS(acosf(xyz.z), atan2f(xyz.x, xyz.y));
+}
+
+GPU_CPU bool bit_set(unsigned int x, int bit)
+{
+	return (x & (1 << bit));
 }
