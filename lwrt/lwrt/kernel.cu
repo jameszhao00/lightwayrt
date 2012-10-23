@@ -155,7 +155,21 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 						* inv_light_pdf 
 						/ (d * d)
 						* hit.material.brdf();
-					summed = summed + addition;					
+							
+					
+					if(pass->bdpt_debug)
+					{
+						int component_size = 200;
+						ref::glm::uvec2 component_xy = 
+							component_image_position(width, height, eye_vertex_idx + 2, 
+							1, component_size, xy.x, xy.y);
+						color value = addition * (float)(component_size * component_size) / (width * height);
+						buffer.elementwise_atomic_add(component_xy.y * width + component_xy.x, value);
+					}
+					else
+					{
+						summed = summed + addition;	
+					}
 				}
 				if(eye_vertex_idx < pass->num_bounces - 1)
 				{
@@ -174,7 +188,10 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 			}
 		}
 	}
-	buffer.set(linid, summed);
+	if(!pass->bdpt_debug)
+	{
+		buffer.set(linid, summed);
+	}
 }
 /*
 GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* scene, const Pass* pass, int width, int height

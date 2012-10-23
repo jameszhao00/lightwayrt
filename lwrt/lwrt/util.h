@@ -337,9 +337,9 @@ struct Scene
 		spheres[2] = Sphere(position<World>(8, 5, 0), 1.5f, Material(color(1.f,1,1), color(0), false));
 		spheres[3] = Sphere(position<World>(8, 9, 0), 3.f, Material(color(1.f,1,1), color(0), false));
 		planes[0] = InfiniteHorizontalPlane(0, Material(color(1,1,1), color(0), false));
-		rings[0] = Ring(position<World>(0,0,0), 6, 1, Material(color(1,1,1), color(0), true));
+		rings[0] = Ring(position<World>(0,0,0), 6, 1, Material(color(1,1,1), color(0), false));
 
-		sphere_lights[0] = Sphere(position<World>(10, 6, 0), 1, Material(color(0), color(300), false));
+		sphere_lights[0] = Sphere(position<World>(10, 6, 0), .1, Material(color(0), color(3000), false));
 	}
 	GPU_CPU position<World> sample_light(position<World> pos, RandomPair u, color* inv_proj_pdf) const
 	{
@@ -477,13 +477,14 @@ struct ray
 		}
 		return false;		
 	}
+#define SHADOW_EPSILON 0.01f
 	GPU_CPU bool intersect_shadow(const Scene& scene, const position<CS> target) const
 	{
-		float expected_t = (target - origin).length();
+		float max_t = (target - origin).length() - SHADOW_EPSILON;
 		for(int i = 0; i < NUM_SPHERES; i++)
 		{
 			Hit<CS> tempHit;
-			if(intersect_sphere(scene.spheres[i], &tempHit) && !close_to(tempHit.t, expected_t))
+			if(intersect_sphere(scene.spheres[i], &tempHit) && tempHit.t < max_t)
 			{
 				return true;
 			}
@@ -491,7 +492,7 @@ struct ray
 		for(int i = 0; i < NUM_PLANES; i++)
 		{
 			Hit<CS> tempHit;
-			if(intersect_plane(scene.planes[i], &tempHit) && !close_to(tempHit.t, expected_t))
+			if(intersect_plane(scene.planes[i], &tempHit) && tempHit.t < max_t)
 			{
 				return true;
 			}
@@ -499,7 +500,7 @@ struct ray
 		for(int i = 0; i < NUM_RINGS; i++)
 		{
 			Hit<CS> tempHit;
-			if(intersect_ring(scene.rings[i], &tempHit) && !close_to(tempHit.t, expected_t))
+			if(intersect_ring(scene.rings[i], &tempHit) && tempHit.t < max_t)
 			{
 				return true;
 			}
