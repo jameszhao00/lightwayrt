@@ -114,6 +114,21 @@ GPU_CPU ref::glm::uvec2 component_image_position(int width, int height, int eye_
 	return ref::glm::uvec2(x, y) 
 		+ ref::glm::uvec2(ref::glm::vec2((float)original_x / width, (float)original_y / height) * ref::glm::vec2(component_size, component_size));
 }
+GPU_CPU color connection_throughput(const Hit<World>& light, const Hit<World>& eye, const Scene& scene)
+{
+	if(light.material.is_specular || eye.material.is_specular) return color(0,0,0);
+
+	ray<World> shadow(eye.position, light.position);
+	if(shadow.offset_by(RAY_EPSILON).intersect_shadow(scene, light.position)) return color(0,0,0);
+		
+	offset<World> disp = eye.position - light.position;
+	float d = disp.length();
+	direction<World> dir(light.position, eye.position);
+	float cos_light = clamp01(dot(dir, light.normal));
+	float cos_eye = clamp01(-dot(dir, eye.normal));
+	float g = cos_light * cos_eye / (d * d);
+	return g;
+}
 GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* scene, const Pass* pass, int width, int height
 #ifdef LW_CPU
 //	, ref::glm::uvec2 xy
@@ -128,51 +143,86 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 	int linid = xy.y * width + xy.x;
 	color summed(0,0,0);
 	ray<World> ray0 = camera_ray(*camera, xy, screen_size);
+	Hit<World> eye_vertex_1;
+	if(!ray0.intersect(*scene, &eye_vertex_1)) return;
+
 	for(int iteration_idx = pass->iteration_idx; iteration_idx < (pass->iteration_idx + pass->num_iterations); iteration_idx++)
 	{
-		ray<World> eye_ray = ray0;
-		color throughput(1,1,1);
-		color weight(0,0,0);
-		for(int eye_vertex_idx = 0; eye_vertex_idx < pass->num_bounces; eye_vertex_idx++)
+		Random rng(xy, RandomCounter(iteration_idx, 0));
+		color value(0,0,0);
+		//gen vertex on light
+		//gen light path vertex
+		//shadow
+		int eye_vertex_idx = 1;
+		int light_vertex_idx = 0;
+		Hit<World> light_vertex;
+		Hit<World> eye_vertex = eye_vertex_1;
+		float light_area_pdf;
+		light_vertex.position = sample_sphere(scene->sphere_lights[0], rng.next2(), &light_area_pdf);
+		light_vertex.normal = direction<World>(scene->sphere_lights[0].origin, light_vertex.position);
+		light_vertex.material = scene->sphere_lights[0].material;
+		color light_throughput(scene->sphere_lights[0].material.emission * light_area_pdf); //emission taken care of later
+		color eye_throughput(1,1,1);
+		//TODO: add eye0-light0, eye1-light0
 		{
-			Hit<World> hit;
-			position<World> previous_hit_position = hit.position;
-			if(eye_ray.intersect(*scene, &hit))
-			{
-				RandomPair u = rand2(RandomKey(xy), RandomCounter(iteration_idx, pass->num_bounces + eye_vertex_idx));
-				color inv_light_pdf;
-				position<World> light_pos = scene->sample_light(hit.position, u, &inv_light_pdf);
-						
-				direction<World> light_dir(hit.position, light_pos);
-
-				if(!ray<World>(hit.position, light_dir)
-					.offset_by(RAY_EPSILON)
-					.intersect_shadow(*scene, light_pos))
-				{
-					float d = (hit.position - light_pos).length();
-					color addition = throughput 
-						* clamp01(dot(light_dir, hit.normal))
-						* inv_light_pdf 
-						/ (d * d)
-						* hit.material.brdf();
-					summed = summed + addition;					
-				}
-				if(eye_vertex_idx < pass->num_bounces - 1)
-				{
-					RandomPair u = rand2(RandomKey(xy), RandomCounter(iteration_idx, eye_vertex_idx));
-					InverseProjectedPdf ip_pdf;
-					direction<World> wi = sampleCosWeightedHemi(hit.normal, u, &ip_pdf);
-					
-					throughput = throughput * ip_pdf * hit.material.brdf();
-					
-					eye_ray = ray<World>(hit.position, wi).offset_by(RAY_EPSILON);			
-				}
-			}
-			else
-			{
-				break;
-			}
+			value = value + eye_vertex.material.brdf() /* emission pre-multiplied into throughput */
+				* eye_throughput * light_throughput
+				* connection_throughput(eye_vertex, light_vertex, *scene);
 		}
+		direction<World> prev_light_ray_dir; //unset initially... light ray will initially be area source
+		direction<World> prev_eye_ray_dir = ray0.dir;
+		while(eye_vertex_idx + light_vertex_idx < pass->num_bounces + 1)
+		{
+			//generate next light vertex		
+			light_throughput = light_throughput * eye_vertex.material.brdf(); //do this with the last vertex
+			{	
+				direction<World> wi;
+				if(!light_vertex.material.is_specular)
+				{
+					InverseProjectedPdf light_dir_ippdf;
+					wi = sampleCosWeightedHemi(light_vertex.normal, rng.next2(), &light_dir_ippdf);
+					light_throughput = light_throughput * light_dir_ippdf;
+				}
+				else
+				{
+					wi = prev_light_ray_dir.reflect(light_vertex.normal);
+					light_throughput = light_throughput * light_vertex.material.albedo;
+				}
+				ray<World> light_ray = ray<World>(light_vertex.position, wi)
+					.offset_by(RAY_EPSILON);
+				prev_light_ray_dir = light_ray.dir;
+				if(!light_ray.intersect(*scene, &light_vertex)) break;
+				light_vertex_idx++;
+			}
+			value = value + eye_vertex.material.brdf() * light_vertex.material.brdf() *
+				connection_throughput(light_vertex, eye_vertex, *scene) * eye_throughput * light_throughput;
+			//TODO: connect new light vertex to eye v0
+			//break; /* HACK: */
+			//generate next eye vertex			
+			eye_throughput = eye_throughput * eye_vertex.material.brdf(); //do this with the last vertex
+			{
+				direction<World> wi;
+				if(!eye_vertex.material.is_specular)
+				{
+					InverseProjectedPdf eye_dir_ippdf;
+					wi = sampleCosWeightedHemi(eye_vertex.normal, rng.next2(), &eye_dir_ippdf);					
+					eye_throughput = eye_throughput * eye_dir_ippdf;
+				}
+				else
+				{
+					wi = prev_eye_ray_dir.reflect(eye_vertex.normal);
+					eye_throughput = eye_throughput * eye_vertex.normal;
+				}
+				ray<World> eye_ray = ray<World>(eye_vertex.position, wi)
+					.offset_by(RAY_EPSILON);
+				prev_eye_ray_dir = eye_ray.dir;
+				if(!eye_ray.intersect(*scene, &eye_vertex)) break;
+				eye_vertex_idx++;
+			}
+			value = value + eye_vertex.material.brdf() * light_vertex.material.brdf() *
+				connection_throughput(light_vertex, eye_vertex, *scene) * eye_throughput * light_throughput;
+		}
+		summed = summed + value;
 	}
 	buffer.set(linid, summed);
 }

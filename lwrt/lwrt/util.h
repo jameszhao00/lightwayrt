@@ -255,7 +255,7 @@ struct Material
 	color albedo;
 	color emission;
 	bool is_specular;
-	GPU_CPU color brdf()
+	GPU_CPU color brdf() const
 	{
 		return albedo / PI;
 	}
