@@ -56,7 +56,7 @@ enum CoordinateSystem
 };
 
 
-GPU_CPU bool close_to(float test, float expected, float epsilon = 0.000001f)
+GPU_CPU bool close_to(float test, float expected, float epsilon = 0.001f)
 {
 	return abs(test - expected) < epsilon;
 }

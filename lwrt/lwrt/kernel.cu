@@ -118,8 +118,8 @@ GPU_CPU color connection_throughput(const Hit<World>& light, const Hit<World>& e
 {
 	if(light.material.is_specular || eye.material.is_specular) return color(0,0,0);
 
-	ray<World> shadow(eye.position, light.position);
-	if(shadow.offset_by(RAY_EPSILON).intersect_shadow(scene, light.position)) return color(0,0,0);
+	ray<World> shadow(light.position, eye.position);
+	if(shadow.offset_by(RAY_EPSILON).intersect_shadow(scene, eye.position)) return color(0,0,0);
 		
 	offset<World> disp = eye.position - light.position;
 	float d = disp.length();
@@ -172,10 +172,13 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 		direction<World> prev_light_ray_dir; //unset initially... light ray will initially be area source
 		direction<World> prev_eye_ray_dir = ray0.dir;
 		
-		while(false)///* HACK */eye_vertex_idx + light_vertex_idx < pass->num_bounces + 1)
+		while(eye_vertex_idx + light_vertex_idx < pass->num_bounces + 1)
 		{
 			//generate next light vertex		
-			light_throughput = light_throughput * eye_vertex.material.brdf(); //do this with the last vertex
+			if(light_vertex_idx > 0)
+			{
+				light_throughput = light_throughput * light_vertex.material.brdf(); //do this with the last vertex
+			}
 			{	
 				direction<World> wi;
 				if(!light_vertex.material.is_specular)
@@ -197,6 +200,8 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 			}
 			value = value + eye_vertex.material.brdf() * light_vertex.material.brdf() *
 				connection_throughput(light_vertex, eye_vertex, *scene) * eye_throughput * light_throughput;
+
+			if(eye_vertex_idx + light_vertex_idx >= pass->num_bounces + 1) break;
 			//TODO: connect new light vertex to eye v0
 			//break; /* HACK: */
 			//generate next eye vertex			
