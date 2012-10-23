@@ -171,7 +171,8 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 		}
 		direction<World> prev_light_ray_dir; //unset initially... light ray will initially be area source
 		direction<World> prev_eye_ray_dir = ray0.dir;
-		while(eye_vertex_idx + light_vertex_idx < pass->num_bounces + 1)
+		
+		while(false)///* HACK */eye_vertex_idx + light_vertex_idx < pass->num_bounces + 1)
 		{
 			//generate next light vertex		
 			light_throughput = light_throughput * eye_vertex.material.brdf(); //do this with the last vertex
