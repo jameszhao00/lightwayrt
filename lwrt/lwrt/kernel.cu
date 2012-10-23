@@ -176,7 +176,7 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 		color light_angular_le = 1.f/PI;
 		color light_throughput = light_spatial_le * light_spatial_ipdf * light_angular_le;
 		color eye_throughput(1,1,1);
-		while(false)//HACK: eye_vertex_idx + light_vertex_idx < pass->num_bounces + 1)
+		while(eye_vertex_idx + light_vertex_idx < pass->num_bounces + 1)
 		{
 			//generate next light vertex		
 			if(light_vertex_idx > 0)

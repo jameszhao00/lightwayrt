@@ -341,7 +341,7 @@ struct Scene
 		planes[0] = InfiniteHorizontalPlane(0, Material(color(1,1,1), color(0), false));
 		rings[0] = Ring(position<World>(0,0,0), 6, 1, Material(color(1,1,1), color(0), false));
 
-		sphere_lights[0] = Sphere(position<World>(10, 6, 0), 1, Material(color(0), color(300), false));
+		sphere_lights[0] = Sphere(position<World>(10, 6, 0), .1, Material(color(0), color(3000), false));
 	}
 	GPU_CPU position<World> sample_light(position<World> pos, RandomPair u, color* inv_proj_pdf) const
 	{
