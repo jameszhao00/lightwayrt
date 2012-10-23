@@ -302,11 +302,13 @@ GPU_CPU direction<World> changeCoordSys(direction<World> n, direction<ZUp> dir)
 	direction<World> out_dir(result.x, result.y, result.z);
 	return out_dir;
 }
-GPU_CPU position<World> sample_sphere(const Sphere& sphere, RandomPair u, InversePdf *inv_pdf)
+GPU_CPU position<World> sample_sphere_light(const Sphere& sphere, RandomPair u, 
+	color* spatial_le,
+	InversePdf* spatial_ipdf)
 {
 	float a = sqrtf(u.y * (1 - u.y));
-	*inv_pdf = 4 * PI * sphere.radius * sphere.radius;
-
+	*spatial_le = sphere.material.emission * PI;
+	*spatial_ipdf = 4 * PI * sphere.radius * sphere.radius;
 	return position<World>(
 		2 * sphere.radius * cosf(2 * PI * u.x) * a + sphere.origin.x, 
 		2 * sphere.radius * sinf(2 * PI * u.x) * a + sphere.origin.y,
@@ -350,7 +352,8 @@ struct Scene
 		*inv_proj_pdf = 
 			sphere_lights[0].material.emission 
 			* clamp01(dot(wi, direction<World>(sample_pos, pos)))
-			* 2 * PI * r_squared;
+			* 2 * PI * r_squared
+			* PI;
 		return sample_pos;
 	}
 };
@@ -476,13 +479,14 @@ struct ray
 		}
 		return false;		
 	}
+#define SHADOW_EPSILON 0.01f
 	GPU_CPU bool intersect_shadow(const Scene& scene, const position<CS> target) const
 	{
-		float expected_t = (target - origin).length();
+		float max_t = (target - origin).length() - SHADOW_EPSILON;
 		for(int i = 0; i < NUM_SPHERES; i++)
 		{
 			Hit<CS> tempHit;
-			if(intersect_sphere(scene.spheres[i], &tempHit) && !close_to(tempHit.t, expected_t))
+			if(intersect_sphere(scene.spheres[i], &tempHit) && tempHit.t < max_t)
 			{
 				return true;
 			}
@@ -490,7 +494,7 @@ struct ray
 		for(int i = 0; i < NUM_PLANES; i++)
 		{
 			Hit<CS> tempHit;
-			if(intersect_plane(scene.planes[i], &tempHit) && !close_to(tempHit.t, expected_t))
+			if(intersect_plane(scene.planes[i], &tempHit) && tempHit.t < max_t)
 			{
 				return true;
 			}
@@ -498,7 +502,7 @@ struct ray
 		for(int i = 0; i < NUM_RINGS; i++)
 		{
 			Hit<CS> tempHit;
-			if(intersect_ring(scene.rings[i], &tempHit) && !close_to(tempHit.t, expected_t))
+			if(intersect_ring(scene.rings[i], &tempHit) && tempHit.t < max_t)
 			{
 				return true;
 			}

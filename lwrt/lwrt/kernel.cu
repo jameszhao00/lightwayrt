@@ -129,6 +129,7 @@ GPU_CPU color connection_throughput(const Hit<World>& light, const Hit<World>& e
 	float g = cos_light * cos_eye / (d * d);
 	return g;
 }
+
 GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* scene, const Pass* pass, int width, int height
 #ifdef LW_CPU
 //	, ref::glm::uvec2 xy
@@ -157,22 +158,25 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 		int light_vertex_idx = 0;
 		Hit<World> light_vertex;
 		Hit<World> eye_vertex = eye_vertex_1;
-		float light_area_pdf;
-		light_vertex.position = sample_sphere(scene->sphere_lights[0], rng.next2(), &light_area_pdf);
+		color light_spatial_le;
+		float light_spatial_ipdf;
+		light_vertex.position = sample_sphere_light(scene->sphere_lights[0], rng.next2(), &light_spatial_le,
+			&light_spatial_ipdf);
 		light_vertex.normal = direction<World>(scene->sphere_lights[0].origin, light_vertex.position);
 		light_vertex.material = scene->sphere_lights[0].material;
-		color light_throughput(scene->sphere_lights[0].material.emission * light_area_pdf); //emission taken care of later
-		color eye_throughput(1,1,1);
 		//TODO: add eye0-light0, eye1-light0
 		{
 			value = value + eye_vertex.material.brdf() /* emission pre-multiplied into throughput */
-				* eye_throughput * light_throughput
-				* connection_throughput(eye_vertex, light_vertex, *scene);
+				* light_spatial_le * light_spatial_ipdf
+				* connection_throughput(eye_vertex, light_vertex, *scene); //spatial emission scale... gets cancelled out later
 		}
 		direction<World> prev_light_ray_dir; //unset initially... light ray will initially be area source
 		direction<World> prev_eye_ray_dir = ray0.dir;
 		
-		while(eye_vertex_idx + light_vertex_idx < pass->num_bounces + 1)
+		color light_angular_le = 1.f/PI;
+		color light_throughput = light_spatial_le * light_spatial_ipdf * light_angular_le;
+		color eye_throughput(1,1,1);
+		while(false)//HACK: eye_vertex_idx + light_vertex_idx < pass->num_bounces + 1)
 		{
 			//generate next light vertex		
 			if(light_vertex_idx > 0)
@@ -183,13 +187,14 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 				direction<World> wi;
 				if(!light_vertex.material.is_specular)
 				{
-					InverseProjectedPdf light_dir_ippdf;
-					wi = sampleCosWeightedHemi(light_vertex.normal, rng.next2(), &light_dir_ippdf);
-					light_throughput = light_throughput * light_dir_ippdf;
+					InverseProjectedPdf light_ippdf;
+					wi = sampleCosWeightedHemi(light_vertex.normal, rng.next2(), &light_ippdf);
+					light_throughput = light_throughput * light_ippdf;
 				}
 				else
 				{
 					wi = prev_light_ray_dir.reflect(light_vertex.normal);
+					//this doesn't make sense
 					light_throughput = light_throughput * light_vertex.material.albedo;
 				}
 				ray<World> light_ray = ray<World>(light_vertex.position, wi)
@@ -200,10 +205,9 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 			}
 			value = value + eye_vertex.material.brdf() * light_vertex.material.brdf() *
 				connection_throughput(light_vertex, eye_vertex, *scene) * eye_throughput * light_throughput;
-
+			
 			if(eye_vertex_idx + light_vertex_idx >= pass->num_bounces + 1) break;
 			//TODO: connect new light vertex to eye v0
-			//break; /* HACK: */
 			//generate next eye vertex			
 			eye_throughput = eye_throughput * eye_vertex.material.brdf(); //do this with the last vertex
 			{
