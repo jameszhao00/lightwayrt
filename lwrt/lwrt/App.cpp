@@ -236,7 +236,7 @@ void App::Update()
 	this->m_pRenderer11->PIXBeginEvent(L"cuda");
 	//if(m_numFrames == 0)//if(m_pTimer->Runtime() < .3)
 	{
-		kernel.execute(m_numFrames * 10, 10, 4, m_width, m_height, false);
+		kernel.execute(m_numFrames * 3, 3, 6, m_width, m_height, false);
 	}
 
 	this->m_pRenderer11->PIXEndEvent();

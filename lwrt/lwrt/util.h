@@ -334,14 +334,14 @@ struct Scene
 	Ring rings[NUM_RINGS];
 	GPU_CPU Scene( ) 
 	{
-		spheres[0] = Sphere(position<World>(3,0,0), 1, Material(color(.7f,1.f, .8f), color(0), false));
-		spheres[1] = Sphere(position<World>(1,0,0), 1, Material(color(1,.7f, .8f), color(0), false));
-		spheres[2] = Sphere(position<World>(8, 5, 0), 1.5f, Material(color(1.f,1,1), color(0), false));
-		spheres[3] = Sphere(position<World>(8, 9, 0), 3.f, Material(color(1.f,1,1), color(0), false));
+		spheres[0] = Sphere(position<World>(3,0,0), 1, Material(color(1,0, 0), color(0), false));
+		spheres[1] = Sphere(position<World>(1,0,0), 1, Material(color(0,1, 0), color(0), false));
+		spheres[2] = Sphere(position<World>(2, 2, 0), 1.5f, Material(color(0,0,1), color(0), false));
+		spheres[3] = Sphere(position<World>(5, 5, 0), 3.f, Material(color(1.f,1,1), color(0), false));
 		planes[0] = InfiniteHorizontalPlane(0, Material(color(1,1,1), color(0), false));
-		rings[0] = Ring(position<World>(0,0,0), 6, 1, Material(color(1,1,1), color(0), false));
+		rings[0] = Ring(position<World>(0,0,0), 5, 1, Material(color(1,1,1), color(0), false));
 
-		sphere_lights[0] = Sphere(position<World>(10, 6, 0), .1, Material(color(0), color(3000), false));
+		sphere_lights[0] = Sphere(position<World>(10, 6, 0), .1, Material(color(0), color(9000), false));
 	}
 	GPU_CPU position<World> sample_light(position<World> pos, RandomPair u, color* inv_proj_pdf) const
 	{

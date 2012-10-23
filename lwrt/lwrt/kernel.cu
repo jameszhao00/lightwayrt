@@ -129,7 +129,13 @@ GPU_CPU color connection_throughput(const Hit<World>& light, const Hit<World>& e
 	float g = cos_light * cos_eye / (d * d);
 	return g;
 }
-
+GPU void store_bdpt_debug(Vec3Buffer& buffer, color value, int width, int height, int ev_count, int lv_count, ref::glm::uvec2 xy)
+{
+	int component_size = 200;
+	ref::glm::uvec2 component_xy = component_image_position(width, height, ev_count, lv_count, component_size, xy.x, xy.y);
+	color add = value * (float)(component_size * component_size) / (width * height);
+	buffer.elementwise_atomic_add(component_xy.y * width + component_xy.x, add);
+}
 GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* scene, const Pass* pass, int width, int height
 #ifdef LW_CPU
 //	, ref::glm::uvec2 xy
@@ -166,9 +172,17 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 		light_vertex.material = scene->sphere_lights[0].material;
 		//TODO: add eye0-light0, eye1-light0
 		{
-			value = value + eye_vertex.material.brdf() /* emission pre-multiplied into throughput */
+			color addition = eye_vertex.material.brdf() /* emission pre-multiplied into throughput */
 				* light_spatial_le * light_spatial_ipdf
 				* connection_throughput(eye_vertex, light_vertex, *scene); //spatial emission scale... gets cancelled out later
+			if(pass->bdpt_debug)
+			{
+				store_bdpt_debug(buffer, addition, width, height, eye_vertex_idx + 1, light_vertex_idx + 1, xy);
+			}
+			else
+			{	
+				value = value + addition;
+			}
 		}
 		direction<World> prev_light_ray_dir; //unset initially... light ray will initially be area source
 		direction<World> prev_eye_ray_dir = ray0.dir;
@@ -203,11 +217,20 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 				if(!light_ray.intersect(*scene, &light_vertex)) break;
 				light_vertex_idx++;
 			}
-			value = value + eye_vertex.material.brdf() * light_vertex.material.brdf() *
-				connection_throughput(light_vertex, eye_vertex, *scene) * eye_throughput * light_throughput;
+			color eye_addition = eye_vertex.material.brdf() * light_vertex.material.brdf() *
+					connection_throughput(light_vertex, eye_vertex, *scene) * eye_throughput * light_throughput;
+			if(pass->bdpt_debug)
+			{				
+				store_bdpt_debug(buffer, eye_addition, width, height, eye_vertex_idx + 1, light_vertex_idx + 1, xy);
+			}
+			else
+			{	
+				value = value + eye_addition;
+			}
+			//TODO: connect new light vertex to eye v0
+			
 			
 			if(eye_vertex_idx + light_vertex_idx >= pass->num_bounces + 1) break;
-			//TODO: connect new light vertex to eye v0
 			//generate next eye vertex			
 			eye_throughput = eye_throughput * eye_vertex.material.brdf(); //do this with the last vertex
 			{
@@ -229,12 +252,23 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 				if(!eye_ray.intersect(*scene, &eye_vertex)) break;
 				eye_vertex_idx++;
 			}
-			value = value + eye_vertex.material.brdf() * light_vertex.material.brdf() *
-				connection_throughput(light_vertex, eye_vertex, *scene) * eye_throughput * light_throughput;
+			color light_addition = eye_vertex.material.brdf() * light_vertex.material.brdf() *
+					connection_throughput(light_vertex, eye_vertex, *scene) * eye_throughput * light_throughput;
+			if(pass->bdpt_debug)
+			{
+				store_bdpt_debug(buffer, light_addition, width, height, eye_vertex_idx + 1, light_vertex_idx + 1, xy);
+			}
+			else
+			{	
+				value = value + light_addition;
+			}
 		}
 		summed = summed + value;
 	}
-	buffer.set(linid, summed);
+	if(!pass->bdpt_debug)
+	{
+		buffer.set(linid, summed);
+	}
 }
 /*
 GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* scene, const Pass* pass, int width, int height
