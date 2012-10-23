@@ -350,7 +350,8 @@ struct Scene
 		*inv_proj_pdf = 
 			sphere_lights[0].material.emission 
 			* clamp01(dot(wi, direction<World>(sample_pos, pos)))
-			* 2 * PI * r_squared;
+			* 2 * PI * r_squared
+			* PI;
 		return sample_pos;
 	}
 };
