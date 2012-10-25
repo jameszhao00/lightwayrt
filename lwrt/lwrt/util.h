@@ -246,6 +246,10 @@ struct Camera
 		inv_proj = ref::glm::inverse(proj);
 		forward = direction<World>(eye, target);
 	}
+	GPU_CPU float a() const 
+	{
+		return powf(2 * tanf(0.5 * (fovy / 180.0) * PI), 2);
+	}
 	float fovy;
 	position<World> eye;
 	direction<World> forward;
@@ -360,18 +364,6 @@ GPU_CPU direction<World> changeCoordSys(direction<World> n, direction<ZUp> dir)
 	auto result = ref::glm::vec3(ref::glm::rotate(q, to_glm(dir)));
 	direction<World> out_dir(result.x, result.y, result.z);
 	return out_dir;
-}
-GPU_CPU position<World> sample_sphere_light(const Sphere& sphere, RandomPair u, 
-	color* spatial_throughput)
-{
-	//assert(sphere.material.type == eEmissive);
-	float a = sqrtf(u.y * (1 - u.y));
-	*spatial_throughput = sphere.material.emissive.emission * PI 
-		* 4 * PI * sphere.radius * sphere.radius;
-	return position<World>(
-		2 * sphere.radius * cosf(2 * PI * u.x) * a + sphere.origin.x, 
-		2 * sphere.radius * sinf(2 * PI * u.x) * a + sphere.origin.y,
-		sphere.radius * (1 - 2 * u.y) + sphere.origin.z);
 }
 GPU_CPU direction<World> sampleUniformHemi(direction<World> n, ref::glm::vec2 u, InverseProjectedPdf *inv_pdf)
 {
@@ -673,4 +665,165 @@ GPU_CPU NormalizedSphericalCS spherical(direction<CS> xyz) //returns theta, phi
 GPU_CPU bool bit_set(unsigned int x, int bit)
 {
 	return (x & (1 << bit));
+}
+GPU_CPU Hit<World> sample_sphere_light(const Sphere& sphere, RandomPair u, 
+	color* spatial_throughput)
+{
+	//assert(sphere.material.type == eEmissive);
+	float a = sqrtf(u.y * (1 - u.y));
+	*spatial_throughput = sphere.material.emissive.emission * PI 
+		* 4 * PI * sphere.radius * sphere.radius;
+	Hit<World> hit;
+	position<World> pos(
+		2 * sphere.radius * cosf(2 * PI * u.x) * a + sphere.origin.x, 
+		2 * sphere.radius * sinf(2 * PI * u.x) * a + sphere.origin.y,
+		sphere.radius * (1 - 2 * u.y) + sphere.origin.z);
+	hit.position = pos;
+	hit.normal = direction<World>(sphere.origin, pos);
+	hit.material = sphere.material;
+	return hit;
+}
+
+struct Vec3Buffer
+{
+	float* x;
+	float* y;
+	float* z;
+	void init(int size) 
+	{
+		CUDA_CHECK_RETURN(cudaMalloc(&x, sizeof(float) * size));
+		CUDA_CHECK_RETURN(cudaMalloc(&y, sizeof(float) * size));
+		CUDA_CHECK_RETURN(cudaMalloc(&z, sizeof(float) * size));
+	}
+	GPU void elementwise_atomic_add(int idx, const v3& v3)
+	{
+		atomicAdd(x + idx, v3.x);
+		atomicAdd(y + idx, v3.y);
+		atomicAdd(z + idx, v3.z);
+	}
+	GPU void elementwise_atomic_add(const ref::glm::uvec2& xy, int width, const v3& v3)
+	{
+		return elementwise_atomic_add(xy.y * width + xy.x, v3);
+	}
+	GPU float area(ref::glm::vec2 a, ref::glm::vec2 b)
+	{
+		return abs(a.x - b.x) * abs(a.y - b.y);
+	}
+	GPU void elementwise_atomic_add(ref::glm::vec2 xy, int width, const v3& v3)
+	{
+		auto top_left = ref::glm::vec2(floor(xy.x), floor(xy.y));
+		/*
+		auto bot_left = top_left + ref::glm::vec2(0, 1);
+		auto bot_right = top_left + ref::glm::vec2(1, 1);
+		auto top_right = top_left + ref::glm::vec2(1, 0);
+
+		float top_left_area = area(top_left, xy);;
+		float bot_left_area = area(bot_left, xy);;
+		float bot_right_area = area(bot_right, xy);;
+		float top_right_area = 1 - top_left_area - bot_left_area - bot_right_area;
+		*/
+		elementwise_atomic_add(ref::glm::uvec2(top_left), width, v3);
+		//elementwise_atomic_add(ref::glm::uvec2(top_left), width, v3_mul(v3, bot_right_area));
+		//elementwise_atomic_add(ref::glm::uvec2(bot_left), width, v3_mul(v3, top_right_area));
+		//elementwise_atomic_add(ref::glm::uvec2(bot_right), width, v3_mul(v3, top_left_area));
+		//elementwise_atomic_add(ref::glm::uvec2(top_right), width, v3_mul(v3, bot_left_area));
+	}
+	GPU_CPU v3 get(int idx) const
+	{
+		return v3(x[idx], y[idx], z[idx]);
+	}
+	GPU_CPU void set(int idx, const v3& v)
+	{
+		x[idx] = v.x; y[idx] = v.y; z[idx] = v.z;
+	}
+};
+struct Pass
+{
+	Pass(int iteration_idx) : iteration_idx(iteration_idx) { }
+	int iteration_idx;
+};
+GPU_CPU ref::glm::vec2 world_to_screen(position<World> world, 
+	const Camera& camera, 
+	int width, int height,
+	bool* in_bounds,
+	ref::glm::vec2& ndc)
+{
+	auto pos_view = camera.view * ref::glm::vec4(to_glm(world), 1);
+	auto pos_clip = camera.proj * pos_view;
+	auto ndc_4 = pos_clip / pos_clip.w;
+	*in_bounds = ndc_4.x > -1 && ndc_4.y > -1 && ndc_4.x < 1 && ndc_4.y < 1 && ndc_4.z > -1 && ndc_4.z < 1;
+	ndc = ref::glm::vec2(ndc_4);
+	return ref::glm::vec2(ref::glm::floor(
+		(ref::glm::vec2(ndc) * ref::glm::vec2(.5, -.5) + ref::glm::vec2(.5, .5)) * ref::glm::vec2(width, height)));
+}
+struct Random
+{
+	GPU_CPU __forceinline__ Random(RandomKey key, RandomCounter base_counter) : key(key), counter(base_counter) { }
+	__device__ __forceinline__ RandomPair next2() 
+	{
+		counter.y++;
+		return rand2(key, counter);
+	}
+	RandomKey key;
+	RandomCounter counter;
+};
+GPU_CPU ref::glm::vec2 component_image_position(int width, int height, int eye_verts_count, int light_verts_count, int component_size,
+	int original_x, int original_y)
+{
+	int center_x = width / 2;
+	int total_verts = eye_verts_count + light_verts_count; //starts at 3
+	int total_components = total_verts + 1; //4 images at 3 verts
+	int y_idx = total_verts - 3; //implicit path with length=1 = 2 verts...
+	int x_idx = light_verts_count;
+	int y = component_size * y_idx;
+	int x = center_x - (float)total_components / 2.f * component_size + eye_verts_count * component_size;
+	if(light_verts_count == 0) x += 20;
+	return ref::glm::vec2(x, y) 
+		+ ref::glm::vec2(ref::glm::vec2((float)original_x / width, (float)original_y / height) * ref::glm::vec2(component_size, component_size));
+}
+GPU_CPU color connection_throughput(const Hit<World>& light, const Hit<World>& eye, const Scene& scene)
+{
+	if(light.material.type == eSpecular || eye.material.type == eSpecular) return color(0,0,0);
+
+	ray<World> shadow(light.position, eye.position);
+	if(shadow.offset_by(RAY_EPSILON).intersect_shadow(scene, eye.position)) return color(0,0,0);
+
+	offset<World> disp = eye.position - light.position;
+	float d = disp.length();
+	direction<World> dir(light.position, eye.position);
+	float cos_light = clamp01(dot(dir, light.normal));
+	float cos_eye = clamp01(-dot(dir, eye.normal));
+	float g = cos_light * cos_eye / (d * d);
+	return g;
+}
+GPU void store_bdpt_debug(Vec3Buffer& buffer, const color& value, const int width, const int height, 
+	int ev_count, int lv_count, ref::glm::vec2 xy)
+{
+	int component_size = 250;
+	ref::glm::vec2 component_xy = component_image_position(width, height, ev_count, lv_count, component_size, xy.x, xy.y);
+	color add = value * (float)(component_size * component_size) / (width * height);
+	buffer.elementwise_atomic_add(component_xy, width, add);
+}
+GPU void extend(const RandomPair& u, const Hit<World>& hit, 
+	ray<World>* path_ray, color* throughput)
+{
+	direction<World> wi;
+	if(hit.material.type != eSpecular)
+	{
+		InverseProjectedPdf ippdf;
+		wi = sampleCosWeightedHemi(hit.normal, u, &ippdf);					
+		*throughput = *throughput * ippdf;
+	}
+	else
+	{
+		wi = path_ray->dir.reflect(hit.normal);
+		*throughput = *throughput * hit.material.specular.albedo;
+	}
+	*path_ray = ray<World>(hit.position, wi).offset_by(RAY_EPSILON);
+}
+GPU_CPU float pow3(float v) { return v * v * v; }
+GPU_CPU float pow2(float v) { return v * v; }
+GPU_CPU float g(const direction<World>& n0, const direction<World>& n1, float d)
+{
+	return dot(n0, n1) / (d * d);
 }

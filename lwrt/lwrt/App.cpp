@@ -36,6 +36,7 @@ using namespace Glyph3;
 #include "cuda_runtime_api.h"
 #include "cuda_d3d11_interop.h"
 #include "kernel.h"
+
 //--------------------------------------------------------------------------------
 App AppInstance; // Provides an instance of the application
 //--------------------------------------------------------------------------------
@@ -235,8 +236,9 @@ void App::Update()
 
 	this->m_pRenderer11->PIXBeginEvent(L"cuda");
 	//if(m_numFrames < 100)//if(m_pTimer->Runtime() < .3)
+	Stats stats;
 	{
-		kernel.execute(m_numFrames * 10, 10, 4, m_width, m_height, false);
+		kernel.execute(m_numFrames, m_width, m_height, true, &stats);
 	}
 
 	this->m_pRenderer11->PIXEndEvent();
@@ -255,7 +257,7 @@ void App::Update()
 	//Vector3f pos = m_camera->GetBody()->Position();	
 	//Vector4f pos4(pos, 1);
 
-	m_pWindow->SetCaption(L"Frame " + ToString(m_numFrames));
+	m_pWindow->SetCaption(L"Frame " + ToString(m_numFrames) + L" MC/S: " + ToString(stats.combinations_per_second() / 1000000));
 
 	m_numFrames++;
 	if(m_camera->pollMoved())

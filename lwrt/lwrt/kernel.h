@@ -2,8 +2,8 @@
 
 #include "cuda_runtime_api.h"
 
+#include "Stats.h"
 struct Vec3Buffer;
-
 #define CUDA_CHECK_RETURN(value) {											\
 	cudaError_t _m_cudaStat = value;										\
 	if (_m_cudaStat != cudaSuccess) {										\
@@ -16,7 +16,7 @@ void unit_test();
 struct Kernel
 {
 	void setup(cudaGraphicsResource* output, int width, int height);
-	void execute(int iteration_idx, int iterations, int bounces, int width, int height, bool bdpt_debug);
+	void execute(int iteration_idx, int width, int height, bool bdpt_debug, Stats* stats);
 
 	void* camera_ptr;
 	void* scene_ptr;

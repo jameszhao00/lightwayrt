@@ -10,97 +10,12 @@
 
 #include "validate_importance_sampling.h"
 
-struct Vec3Buffer
-{
-	float* x;
-	float* y;
-	float* z;
-	void init(int size) 
-	{
-		CUDA_CHECK_RETURN(cudaMalloc(&x, sizeof(float) * size));
-		CUDA_CHECK_RETURN(cudaMalloc(&y, sizeof(float) * size));
-		CUDA_CHECK_RETURN(cudaMalloc(&z, sizeof(float) * size));
-	}
-	GPU void elementwise_atomic_add(int idx, const v3& v3)
-	{
-		atomicAdd(x + idx, v3.x);
-		atomicAdd(y + idx, v3.y);
-		atomicAdd(z + idx, v3.z);
-	}
-	GPU void elementwise_atomic_add(const ref::glm::uvec2& xy, int width, const v3& v3)
-	{
-		return elementwise_atomic_add(xy.y * width + xy.x, v3);
-	}
-	GPU float area(ref::glm::vec2 a, ref::glm::vec2 b)
-	{
-		return abs(a.x - b.x) * abs(a.y - b.y);
-	}
-	GPU void elementwise_atomic_add(ref::glm::vec2 xy, int width, const v3& v3)
-	{
-		auto top_left = ref::glm::vec2(floor(xy.x), floor(xy.y));
-		/*
-		auto bot_left = top_left + ref::glm::vec2(0, 1);
-		auto bot_right = top_left + ref::glm::vec2(1, 1);
-		auto top_right = top_left + ref::glm::vec2(1, 0);
-
-		float top_left_area = area(top_left, xy);;
-		float bot_left_area = area(bot_left, xy);;
-		float bot_right_area = area(bot_right, xy);;
-		float top_right_area = 1 - top_left_area - bot_left_area - bot_right_area;
-		*/
-		elementwise_atomic_add(ref::glm::uvec2(top_left), width, v3);
-		//elementwise_atomic_add(ref::glm::uvec2(top_left), width, v3_mul(v3, bot_right_area));
-		//elementwise_atomic_add(ref::glm::uvec2(bot_left), width, v3_mul(v3, top_right_area));
-		//elementwise_atomic_add(ref::glm::uvec2(bot_right), width, v3_mul(v3, top_left_area));
-		//elementwise_atomic_add(ref::glm::uvec2(top_right), width, v3_mul(v3, bot_left_area));
-	}
-	GPU_CPU v3 get(int idx) const
-	{
-		return v3(x[idx], y[idx], z[idx]);
-	}
-	GPU_CPU void set(int idx, const v3& v)
-	{
-		x[idx] = v.x; y[idx] = v.y; z[idx] = v.z;
-	}
-};
-struct Pass
-{
-	Pass(int iteration_idx, int num_iterations, int num_bounces, bool bdpt_debug) 
-		: iteration_idx(iteration_idx), num_iterations(num_iterations), num_bounces(num_bounces), bdpt_debug(bdpt_debug) { }
-	int iteration_idx;
-	int num_iterations;
-	int num_bounces;
-	bool bdpt_debug;
-};
-GPU_CPU ref::glm::vec2 world_to_screen(position<World> world, 
-	const Camera& camera, 
-	int width, int height,
-	bool* in_bounds,
-	ref::glm::vec2& ndc)
-{
-	auto pos_view = camera.view * ref::glm::vec4(to_glm(world), 1);
-	auto pos_clip = camera.proj * pos_view;
-	auto ndc_4 = pos_clip / pos_clip.w;
-	*in_bounds = ndc_4.x > -1 && ndc_4.y > -1 && ndc_4.x < 1 && ndc_4.y < 1 && ndc_4.z > -1 && ndc_4.z < 1;
-	ndc = ref::glm::vec2(ndc_4);
-	return ref::glm::vec2(ref::glm::floor(
-		(ref::glm::vec2(ndc) * ref::glm::vec2(.5, -.5) + ref::glm::vec2(.5, .5)) * ref::glm::vec2(width, height)));
-}
-struct Random
-{
-	GPU_CPU __forceinline__ Random(RandomKey key, RandomCounter base_counter) : key(key), counter(base_counter) { }
-	__device__ __forceinline__ RandomPair next2() 
-	{
-		counter.y++;
-		return rand2(key, counter);
-	}
-	RandomKey key;
-	RandomCounter counter;
-};
 
 #ifndef LW_UNIT_TEST
 surface<void, cudaSurfaceType2D> output_surf;
-GPU_ENTRY void transfer_image(Vec3Buffer new_buffer, Vec3Buffer existing_buffer, const Pass* pass, int width, int height)
+
+template<int SAMPLES_PER_ITERATION>
+GPU_ENTRY void transfer_image(Vec3Buffer new_buffer, Vec3Buffer existing_buffer, int iteration_idx, int width, int height)
 {
 	ref::glm::uvec2 screen_size(width, height);		
 #ifndef LW_CPU
@@ -110,9 +25,9 @@ GPU_ENTRY void transfer_image(Vec3Buffer new_buffer, Vec3Buffer existing_buffer,
 	int linid = xy.y * width + xy.x;
 
 	color existing = existing_buffer.get(linid);
-	float existing_weight = (float)pass->iteration_idx / (pass->iteration_idx + pass->num_iterations);
-	color combined = (color(new_buffer.get(linid)) / (float)pass->num_iterations) * (1 - existing_weight);
-	if(pass->iteration_idx > 0)
+	float existing_weight = (float)iteration_idx / (iteration_idx + 1);
+	color combined = (color(new_buffer.get(linid)) / (float)SAMPLES_PER_ITERATION) * (1 - existing_weight);
+	if(iteration_idx > 0)
 	{
 		combined = combined + existing * (existing_weight);
 	}
@@ -123,61 +38,8 @@ GPU_ENTRY void transfer_image(Vec3Buffer new_buffer, Vec3Buffer existing_buffer,
 	surf2Dwrite(make_float4(combined_tonemapped.x, combined_tonemapped.y, combined_tonemapped.z, 1), output_surf, xy.x*sizeof(float4), xy.y);
 	
 }
-GPU_CPU ref::glm::vec2 component_image_position(int width, int height, int eye_verts_count, int light_verts_count, int component_size,
-	int original_x, int original_y)
-{
-	int center_x = width / 2;
-	int total_verts = eye_verts_count + light_verts_count; //starts at 3
-	int total_components = total_verts + 1; //4 images at 3 verts
-	int y_idx = total_verts - 3; //implicit path with length=1 = 2 verts...
-	int x_idx = light_verts_count;
-	int y = component_size * y_idx;
-	int x = center_x - (float)total_components / 2.f * component_size + eye_verts_count * component_size;
-	if(light_verts_count == 0) x += 20;
-	return ref::glm::vec2(x, y) 
-		+ ref::glm::vec2(ref::glm::vec2((float)original_x / width, (float)original_y / height) * ref::glm::vec2(component_size, component_size));
-}
-GPU_CPU color connection_throughput(const Hit<World>& light, const Hit<World>& eye, const Scene& scene)
-{
-	if(light.material.type == eSpecular || eye.material.type == eSpecular) return color(0,0,0);
-
-	ray<World> shadow(light.position, eye.position);
-	if(shadow.offset_by(RAY_EPSILON).intersect_shadow(scene, eye.position)) return color(0,0,0);
-		
-	offset<World> disp = eye.position - light.position;
-	float d = disp.length();
-	direction<World> dir(light.position, eye.position);
-	float cos_light = clamp01(dot(dir, light.normal));
-	float cos_eye = clamp01(-dot(dir, eye.normal));
-	float g = cos_light * cos_eye / (d * d);
-	return g;
-}
-GPU void store_bdpt_debug(Vec3Buffer& buffer, const color& value, const int width, const int height, 
-	int ev_count, int lv_count, ref::glm::vec2 xy)
-{
-	int component_size = 250;
-	ref::glm::vec2 component_xy = component_image_position(width, height, ev_count, lv_count, component_size, xy.x, xy.y);
-	color add = value * (float)(component_size * component_size) / (width * height);
-	buffer.elementwise_atomic_add(component_xy, width, add);
-}
-GPU void extend_bdpt(Random& rng, const Hit<World>& hit, ray<World>* path_ray, color* throughput)
-{
-	direction<World> wi;
-	if(hit.material.type != eSpecular)
-	{
-		InverseProjectedPdf ippdf;
-		wi = sampleCosWeightedHemi(hit.normal, rng.next2(), &ippdf);					
-		*throughput = *throughput * ippdf;
-	}
-	else
-	{
-		wi = path_ray->dir.reflect(hit.normal);
-		*throughput = *throughput * hit.material.specular.albedo;
-	}
-	*path_ray = ray<World>(hit.position, wi)
-					.offset_by(RAY_EPSILON);
-}
-GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* scene, const Pass* pass, int width, int height
+template<int SamplesPerIteration, int NumBounces, bool BdptDebug>
+GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* scene, int iteration_idx, int width, int height
 #ifdef LW_CPU
 //	, ref::glm::uvec2 xy
 #endif
@@ -191,20 +53,14 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 	int linid = xy.y * width + xy.x;
 	color summed(0,0,0);
 	{
-		float a = powf(2 * tanf(0.5 * (camera->fovy / 180) * PI), 2);
-		for(int iteration_idx = pass->iteration_idx; iteration_idx < (pass->iteration_idx + pass->num_iterations); 
-			iteration_idx++)
-		{
-			Random rng(xy, RandomCounter(iteration_idx, 0));
-			Hit<World> light_vertex;
+		float a = camera->a();
+		for(int sample_idx = 0; sample_idx < SamplesPerIteration; sample_idx++)
+		{			
+			Random rng(xy, RandomCounter(iteration_idx, sample_idx));
 			color light_throughput;
-			float light_spatial_ipdf;
-			light_vertex.position = sample_sphere_light(scene->sphere_lights[0], rng.next2(), &light_throughput);
-			light_vertex.normal = direction<World>(scene->sphere_lights[0].origin, light_vertex.position);
-			light_vertex.material = scene->sphere_lights[0].material;
-		
+			Hit<World> light_vertex = sample_sphere_light(scene->sphere_lights[0], rng.next2(), &light_throughput);		
 			ray<World> light_ray;
-			for(int light_vertex_idx = 0; light_vertex_idx < pass->num_bounces + 1; light_vertex_idx++)
+			for(int light_vertex_idx = 0; light_vertex_idx < NumBounces + 1; light_vertex_idx++)
 			{			
 				//direct connect with eye
 				if(light_vertex.material.type != eSpecular)
@@ -222,12 +78,11 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 							float costheta_shadow_lv = clamp01(dot(light_to_eye_shadow_ray.dir, light_vertex.normal));
 							float d = (light_vertex.position - camera->eye).length();
 							float g = costheta_shadow_ev * costheta_shadow_lv / (d * d);
-							float we = 1
-								/ (a * costheta_shadow_ev * costheta_shadow_ev * costheta_shadow_ev);
+							float we = 1 / (a * pow3(costheta_shadow_ev));
 							int variations = 2;
 							color addition = light_throughput * light_vertex.material.brdf() 
 								* g * we / (float)variations;
-							if(pass->bdpt_debug)
+							if(BdptDebug)
 							{
 								store_bdpt_debug(buffer, addition, width, height, 1, light_vertex_idx + 1, uv);
 							}
@@ -238,11 +93,11 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 						}
 					}
 				}
-				if(light_vertex_idx < pass->num_bounces)
+				if(light_vertex_idx < NumBounces)
 				{
 					/* HACK... should divide by PI for vertex 0 */
 					light_throughput = light_throughput * light_vertex.material.brdf();
-					extend_bdpt(rng, light_vertex, &light_ray, &light_throughput);
+					extend(rng.next2(), light_vertex, &light_ray, &light_throughput);
 					if(!light_ray.intersect(*scene, &light_vertex)) break;
 				}
 			}
@@ -252,10 +107,9 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 	{		
 		color summed(0,0,0);
 		
-		for(int iteration_idx = pass->iteration_idx; iteration_idx < (pass->iteration_idx + pass->num_iterations);
-			iteration_idx++)
+		for(int sample_idx = 0; sample_idx < SamplesPerIteration; sample_idx++)
 		{			
-			Random rng(xy, RandomCounter(iteration_idx, 1000));
+			Random rng(xy, RandomCounter(iteration_idx, sample_idx + 1000));
 			color value(0,0,0);
 			color eye_throughput(1,1,1);
 			ray<World> ray0 = camera_ray(*camera, xy, screen_size);
@@ -263,7 +117,7 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 			if(!ray0.intersect(*scene, &eye_vertex_1)) return;
 			Hit<World> eye_vertex = eye_vertex_1;
 			ray<World> eye_ray = ray0;
-			for(int eye_vertex_idx = 1; eye_vertex_idx < pass->num_bounces + 1; eye_vertex_idx++)
+			for(int eye_vertex_idx = 1; eye_vertex_idx < NumBounces + 1; eye_vertex_idx++)
 			{				
 				int variations = 2;				
 				color addition(0,0,0);
@@ -285,7 +139,7 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 				}
 				if(!addition.is_black())
 				{
-					if(pass->bdpt_debug)
+					if(BdptDebug)
 					{
 						store_bdpt_debug(buffer, addition, width, height, eye_vertex_idx + 1, 
 							eye_vertex.material.type == eEmissive ? 0 : 1, ref::glm::vec2(xy));
@@ -296,10 +150,10 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 					}
 				}
 				if(eye_vertex.material.type == eEmissive) break;
-				if(eye_vertex_idx < pass->num_bounces)
+				if(eye_vertex_idx < NumBounces)
 				{
 					eye_throughput = eye_throughput * eye_vertex.material.brdf();
-					extend_bdpt(rng, eye_vertex, &eye_ray, &eye_throughput);
+					extend(rng.next2(), eye_vertex, &eye_ray, &eye_throughput);
 
 					if(!eye_ray.intersect(*scene, &eye_vertex, eye_vertex.material.type == eSpecular)) break;
 				}
@@ -307,7 +161,7 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 			summed = summed + value;
 		}
 		
-		if(!pass->bdpt_debug)
+		if(!BdptDebug)
 		{
 			buffer.set(linid, summed);
 		}
@@ -318,28 +172,30 @@ void Kernel::setup(cudaGraphicsResource* output, int width, int height)
 	framebuffer_resource = output;
 	CUDA_CHECK_RETURN(cudaMalloc((void**) &camera_ptr, sizeof(Camera)));
 	CUDA_CHECK_RETURN(cudaMalloc((void**) &scene_ptr, sizeof(Scene)));
-	CUDA_CHECK_RETURN(cudaMalloc((void**) &pass_ptr, sizeof(Pass)));
 	//CUDA_CHECK_RETURN(cudaMalloc((void**) &buffer, sizeof(ref::glm::vec4) * width * height));
 	new_buffer = new Vec3Buffer();
 	new_buffer->init(width * height);
 	existing_buffer = new Vec3Buffer();
 	existing_buffer->init(width * height);
 }
-void Kernel::execute(int iteration_idx, int iterations, int bounces, int width, int height, bool bdpt_debug)
+
+void Kernel::execute(int iteration_idx, int width, int height, bool bdpt_debug, Stats* stats)
 {	
-	Pass pass(iteration_idx, iterations, bounces, bdpt_debug);
+	const int SAMPLES_PER_ITERATION = 6;
+	const int NUM_BOUNCES = 4;
+	*stats = Stats::two_way(SAMPLES_PER_ITERATION, NUM_BOUNCES, width, height);
+	stats->start();
 	Camera camera(position<World>(0,9,-7), position<World>(0,0,1), bdpt_debug ? 1 : (float)width/height);
 	Scene scene;
 
 	CUDA_CHECK_RETURN(cudaMemcpy(camera_ptr, &camera, sizeof(Camera), cudaMemcpyHostToDevice));
 	CUDA_CHECK_RETURN(cudaMemcpy(scene_ptr, &scene, sizeof(Scene), cudaMemcpyHostToDevice));
-	CUDA_CHECK_RETURN(cudaMemcpy(pass_ptr, &pass, sizeof(Pass), cudaMemcpyHostToDevice));
 
 	dim3 threadPerBlock(16, 16, 1);
 	dim3 blocks((unsigned int)ceil(width / (float)threadPerBlock.x), 
 		(unsigned int)ceil(height / (float)threadPerBlock.y), 1);	
-	gfx_kernel<<<blocks, threadPerBlock>>>(*new_buffer, (Camera*)camera_ptr, 
-		(Scene*)scene_ptr, (Pass*)pass_ptr, width, height);
+	gfx_kernel<SAMPLES_PER_ITERATION, NUM_BOUNCES, false><<<blocks, threadPerBlock>>>(*new_buffer, (Camera*)camera_ptr, 
+		(Scene*)scene_ptr, iteration_idx, width, height);
 
 
 	
@@ -349,10 +205,12 @@ void Kernel::execute(int iteration_idx, int iterations, int bounces, int width, 
 	CUDA_CHECK_RETURN(cudaGraphicsSubResourceGetMappedArray(&framebuffer_ptr, framebuffer_resource, 0, 0));
 	CUDA_CHECK_RETURN(cudaBindSurfaceToArray(output_surf, framebuffer_ptr));
 
-	transfer_image<<<blocks, threadPerBlock>>>(*new_buffer, 
-		*existing_buffer, (Pass*)pass_ptr, width, height);
+	transfer_image<SAMPLES_PER_ITERATION><<<blocks, threadPerBlock>>>(*new_buffer, 
+		*existing_buffer, iteration_idx, width, height);
 	CUDA_CHECK_RETURN(cudaGraphicsUnmapResources(1, &framebuffer_resource));
+	stats->stop();
 }
+
 #endif
 #ifdef LW_UNIT_TEST
 //tests
@@ -428,3 +286,4 @@ TEST_CASE("math/color", "color math works")
 	REQUIRE(all_equal(color(1,1,1) / color(2,2,2), color(0.5f, 0.5f, 0.5f)));
 }
 #endif
+
