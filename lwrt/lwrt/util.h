@@ -41,7 +41,8 @@ __device__ __forceinline__ unsigned int laneId()
 	asm("mov.u32 %0, %laneid;" : "=r"(ret) );
 	return ret;
 }
-GPU float shuffle_up_wrap(float var, int delta)
+template<typename T>
+GPU T shuffle_up_wrap(T var, int delta)
 {
 	int target_laneId = (laneId() + delta);
 	target_laneId = (target_laneId > (warpSize - 1)) ? target_laneId - 32 : target_laneId;
@@ -65,6 +66,7 @@ struct v3
 {
 	float x,y,z;	
 	GPU_CPU v3() : x(0), y(0), z(0) { }
+	GPU_CPU v3(float3 f3) : x(f3.x), y(f3.y), z(f3.z) { }
 	GPU_CPU v3(float xyz) : x(xyz), y(xyz), z(xyz) { }
 	GPU_CPU v3(float x, float y, float z) : x(x), y(y), z(z) { }
 	GPU_CPU void set(float v) { x=v;y=v;z=v; }
@@ -228,14 +230,14 @@ RandomPair rand2(RandomKey key, RandomCounter counter)
 struct Camera
 {
 	Camera() { }
-	Camera(position<World> eye, position<World> target)
+	Camera(position<World> eye, position<World> target, float aspect_ratio)
 	{
 		fovy = 60;
 
 		this->eye = eye;
 		view = ref::glm::lookAt(to_glm(eye), to_glm(target), to_glm(v3(0.f, 1.f, 0.f)));
 		inv_view = ref::glm::inverse(view);
-		proj = ref::glm::perspective(fovy, 1.f, 1.f, 1000.f);
+		proj = ref::glm::perspective(fovy, aspect_ratio, 1.f, 1000.f);
 		inv_proj = ref::glm::inverse(proj);
 		forward = direction<World>(eye, target);
 	}
@@ -247,22 +249,65 @@ struct Camera
 	ref::glm::mat4x4 view;
 	ref::glm::mat4x4 proj;
 };
+enum MaterialType
+{
+	eSpecular,
+	eEmissive,
+	eDiffuse
+};
 struct Material
 {
-	GPU_CPU Material() : albedo(), emission(), is_specular(false) { }
-	GPU_CPU Material(const color& p_albedo, const color& p_emissions, bool p_is_specular) 
-		: albedo(p_albedo), emission(p_emissions), is_specular(p_is_specular) { }
-	color albedo;
-	color emission;
-	bool is_specular;
-	GPU_CPU color brdf() const
+	GPU_CPU static GPU_CPU Material make_specular(color albedo)
 	{
-		return albedo / PI;
+		Material material;
+		material.type = eSpecular;
+		material.specular.albedo = albedo;
+		return material;
+	}
+	GPU_CPU static GPU_CPU Material make_diffuse(color albedo) 
+	{
+		Material material;
+		material.type = eDiffuse;
+		material.diffuse.albedo = albedo;
+		return material;
+	}
+	GPU_CPU static GPU_CPU Material make_emissive(color emission)
+	{
+		Material material;
+		material.type = eEmissive;
+		material.emissive.emission = emission;
+		return material;
+	}
+
+	MaterialType type;
+	struct 
+	{
+		color albedo;
+	} specular;
+	struct
+	{
+		color albedo;
+	} diffuse;
+	struct  
+	{
+		color emission;
+	} emissive;
+	GPU_CPU color brdf() const
+	{		
+		if(type == eEmissive) { return 1; }
+		else if(type == eDiffuse) { return this->diffuse.albedo / PI; }
+		else if(type == eSpecular) { return 1; }
+		
 	}
 	GPU Material shuffle_up(unsigned int delta) const 
 	{
 		if(delta == 0) return *this;
-		return Material(albedo.shuffle_up(delta), emission.shuffle_up(delta), shuffle_up_wrap(is_specular, delta));
+		Material material;
+		material.type = (MaterialType)shuffle_up_wrap((int)type, delta);
+		material.diffuse.albedo = diffuse.albedo.shuffle_up(delta);
+		material.specular.albedo = specular.albedo.shuffle_up(delta);
+		material.emissive.emission = emissive.emission.shuffle_up(delta);
+		return material;
 	}
 };
 struct Sphere
@@ -306,8 +351,9 @@ GPU_CPU position<World> sample_sphere_light(const Sphere& sphere, RandomPair u,
 	color* spatial_le,
 	InversePdf* spatial_ipdf)
 {
+	//assert(sphere.material.type == eEmissive);
 	float a = sqrtf(u.y * (1 - u.y));
-	*spatial_le = sphere.material.emission * PI;
+	*spatial_le = sphere.material.emissive.emission * PI;
 	*spatial_ipdf = 4 * PI * sphere.radius * sphere.radius;
 	return position<World>(
 		2 * sphere.radius * cosf(2 * PI * u.x) * a + sphere.origin.x, 
@@ -322,7 +368,7 @@ GPU_CPU direction<World> sampleUniformHemi(direction<World> n, ref::glm::vec2 u,
 	*inv_pdf = 2. * PI * wi.z;
 	return changeCoordSys(n, wi);
 }
-#define NUM_SPHERES 4
+#define NUM_SPHERES 3
 #define NUM_SPHERE_LIGHTS 1
 #define NUM_PLANES 1
 #define NUM_RINGS 1
@@ -334,14 +380,14 @@ struct Scene
 	Ring rings[NUM_RINGS];
 	GPU_CPU Scene( ) 
 	{
-		spheres[0] = Sphere(position<World>(3,0,0), 1, Material(color(1,0, 0), color(0), false));
-		spheres[1] = Sphere(position<World>(1,0,0), 1, Material(color(0,1, 0), color(0), false));
-		spheres[2] = Sphere(position<World>(2, 2, 0), 1.5f, Material(color(0,0,1), color(0), false));
-		spheres[3] = Sphere(position<World>(5, 5, 0), 3.f, Material(color(1.f,1,1), color(0), false));
-		planes[0] = InfiniteHorizontalPlane(0, Material(color(1,1,1), color(0), false));
-		rings[0] = Ring(position<World>(0,0,0), 5, 1, Material(color(1,1,1), color(0), false));
+		spheres[0] = Sphere(position<World>(3,0,0), 1, Material::make_diffuse(color(1,0,0)));
+		spheres[1] = Sphere(position<World>(1,0,0), 1, Material::make_diffuse(color(0,1,0)));
+		spheres[2] = Sphere(position<World>(2, 2, 0), 1.5f, Material::make_diffuse(color(0,0,1)));
+		//spheres[3] = Sphere(position<World>(5, 5, 0), 3.f, Material(color(1.f,1,1), color(0), false));
+		planes[0] = InfiniteHorizontalPlane(0,Material::make_diffuse(color(1,1,1)));
+		rings[0] = Ring(position<World>(0,0,0), 5, 1,Material::make_diffuse(color(1,1,1)));
 
-		sphere_lights[0] = Sphere(position<World>(10, 6, 0), .1, Material(color(0), color(9000), false));
+		sphere_lights[0] = Sphere(position<World>(10, 6, 0), 2,Material::make_emissive(color(20,20,20)));
 	}
 	GPU_CPU position<World> sample_light(position<World> pos, RandomPair u, color* inv_proj_pdf) const
 	{
@@ -350,7 +396,7 @@ struct Scene
 		float r_squared = sphere_lights[0].radius * sphere_lights[0].radius;
 		position<World> sample_pos = sphere_lights[0].origin + wi * sphere_lights[0].radius;
 		*inv_proj_pdf = 
-			sphere_lights[0].material.emission 
+			sphere_lights[0].material.emissive.emission 
 			* clamp01(dot(wi, direction<World>(sample_pos, pos)))
 			* 2 * PI * r_squared
 			* PI;
