@@ -75,6 +75,10 @@ struct v3
 		if(delta == 0) return *this;
 		return v3(shuffle_up_wrap(x, delta), shuffle_up_wrap(y, delta), shuffle_up_wrap(z, delta));
 	}
+	GPU v3 shuffle(unsigned int idx) const
+	{
+		return v3(__shfl(x, idx), __shfl(y, idx), __shfl(z, idx));
+	}
 };
 GPU_CPU bool all_equal(const v3& a, const v3& b, float epsilon = 0.00000001f)
 {
@@ -132,6 +136,7 @@ struct color : v3
 	GPU_CPU color operator/(float rhs) const { return *this * (1.f/rhs); }
 	GPU_CPU color operator/(const color& rhs) const { return v3_div(*this, rhs); }
 	GPU_CPU bool is_black() const { return x == 0 && y == 0 && z == 0; }
+	GPU_CPU float lum() const { return 0.2126 * x + 0.7152 * y + 0.0722 * z;}
 };
 template<CoordinateSystem CS>
 struct position : v3
@@ -299,6 +304,15 @@ struct Material
 		else if(type == eSpecular) { return 1; }
 		
 	}
+	GPU Material shuffle(unsigned int idx) const 
+	{
+		Material material;
+		material.type = (MaterialType)__shfl((int)type, idx);
+		material.diffuse.albedo = diffuse.albedo.shuffle(idx);
+		material.specular.albedo = specular.albedo.shuffle(idx);
+		material.emissive.emission = emissive.emission.shuffle(idx);
+		return material;
+	}
 	GPU Material shuffle_up(unsigned int delta) const 
 	{
 		if(delta == 0) return *this;
@@ -348,13 +362,12 @@ GPU_CPU direction<World> changeCoordSys(direction<World> n, direction<ZUp> dir)
 	return out_dir;
 }
 GPU_CPU position<World> sample_sphere_light(const Sphere& sphere, RandomPair u, 
-	color* spatial_le,
-	InversePdf* spatial_ipdf)
+	color* spatial_throughput)
 {
 	//assert(sphere.material.type == eEmissive);
 	float a = sqrtf(u.y * (1 - u.y));
-	*spatial_le = sphere.material.emissive.emission * PI;
-	*spatial_ipdf = 4 * PI * sphere.radius * sphere.radius;
+	*spatial_throughput = sphere.material.emissive.emission * PI 
+		* 4 * PI * sphere.radius * sphere.radius;
 	return position<World>(
 		2 * sphere.radius * cosf(2 * PI * u.x) * a + sphere.origin.x, 
 		2 * sphere.radius * sinf(2 * PI * u.x) * a + sphere.origin.y,
@@ -368,7 +381,34 @@ GPU_CPU direction<World> sampleUniformHemi(direction<World> n, ref::glm::vec2 u,
 	*inv_pdf = 2. * PI * wi.z;
 	return changeCoordSys(n, wi);
 }
-#define NUM_SPHERES 3
+template<CoordinateSystem CS>
+struct Hit
+{
+	direction<CS> normal;
+	position<CS> position;
+	Material material;
+	float t;
+
+	GPU Hit<CS> shuffle(unsigned int idx)
+	{
+		Hit<CS> result;
+		result.normal = normal.shuffle(idx);
+		result.position = position.shuffle(idx);
+		result.t = __shfl(t, idx);
+		result.material = material.shuffle(idx);
+		return result;
+	}
+	GPU Hit<CS> shuffle_up(unsigned int delta)
+	{
+		Hit<CS> result;
+		result.normal = normal.shuffle_up(delta);
+		result.position = position.shuffle_up(delta);
+		result.t = shuffle_up_wrap(t, delta);
+		result.material = material.shuffle_up(delta);
+		return result;
+	}
+};
+#define NUM_SPHERES 4
 #define NUM_SPHERE_LIGHTS 1
 #define NUM_PLANES 1
 #define NUM_RINGS 1
@@ -383,41 +423,27 @@ struct Scene
 		spheres[0] = Sphere(position<World>(3,0,0), 1, Material::make_diffuse(color(1,0,0)));
 		spheres[1] = Sphere(position<World>(1,0,0), 1, Material::make_diffuse(color(0,1,0)));
 		spheres[2] = Sphere(position<World>(2, 2, 0), 1.5f, Material::make_diffuse(color(0,0,1)));
-		//spheres[3] = Sphere(position<World>(5, 5, 0), 3.f, Material(color(1.f,1,1), color(0), false));
+		spheres[3] = Sphere(position<World>(5, 5, 0), 3.f, Material::make_diffuse(color(1.f,1,1)));
 		planes[0] = InfiniteHorizontalPlane(0,Material::make_diffuse(color(1,1,1)));
-		rings[0] = Ring(position<World>(0,0,0), 5, 1,Material::make_diffuse(color(1,1,1)));
+		rings[0] = Ring(position<World>(0,0,0), 5, 1,Material::make_specular(color(1,1,1)));
 
 		sphere_lights[0] = Sphere(position<World>(10, 6, 0), 2,Material::make_emissive(color(20,20,20)));
 	}
-	GPU_CPU position<World> sample_light(position<World> pos, RandomPair u, color* inv_proj_pdf) const
+	GPU_CPU Hit<World> sample_light(position<World> pos, RandomPair u, color* spatial_throughput) const
 	{
 		float hemi_inv_pdf;
 		direction<World> wi = sampleUniformHemi(direction<World>(sphere_lights[0].origin, pos), u, &hemi_inv_pdf);
 		float r_squared = sphere_lights[0].radius * sphere_lights[0].radius;
 		position<World> sample_pos = sphere_lights[0].origin + wi * sphere_lights[0].radius;
-		*inv_proj_pdf = 
-			sphere_lights[0].material.emissive.emission 
-			* clamp01(dot(wi, direction<World>(sample_pos, pos)))
-			* 2 * PI * r_squared
-			* PI;
-		return sample_pos;
-	}
-};
-template<CoordinateSystem CS>
-struct Hit
-{
-	direction<CS> normal;
-	position<CS> position;
-	Material material;
-	float t;
-	GPU Hit<CS> shuffle_up(unsigned int delta)
-	{
-		Hit<CS> result;
-		result.normal = normal.shuffle_up(delta);
-		result.position = position.shuffle_up(delta);
-		result.t = shuffle_up_wrap(t, delta);
-		result.material = material.shuffle_up(delta);
-		return result;
+
+		*spatial_throughput = sphere_lights[0].material.emissive.emission * PI
+			* 2 * PI * r_squared;
+
+		Hit<World> hit;
+		hit.material = sphere_lights[0].material;
+		hit.normal = direction<World>(sphere_lights[0].origin, sample_pos);
+		hit.position = sample_pos;
+		return hit;
 	}
 };
 template<CoordinateSystem CS>

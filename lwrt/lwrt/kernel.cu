@@ -27,7 +27,7 @@ struct Vec3Buffer
 		atomicAdd(y + idx, v3.y);
 		atomicAdd(z + idx, v3.z);
 	}
-	GPU void elementwise_atomic_add(ref::glm::uvec2 xy, int width, const v3& v3)
+	GPU void elementwise_atomic_add(const ref::glm::uvec2& xy, int width, const v3& v3)
 	{
 		return elementwise_atomic_add(xy.y * width + xy.x, v3);
 	}
@@ -38,6 +38,7 @@ struct Vec3Buffer
 	GPU void elementwise_atomic_add(ref::glm::vec2 xy, int width, const v3& v3)
 	{
 		auto top_left = ref::glm::vec2(floor(xy.x), floor(xy.y));
+		/*
 		auto bot_left = top_left + ref::glm::vec2(0, 1);
 		auto bot_right = top_left + ref::glm::vec2(1, 1);
 		auto top_right = top_left + ref::glm::vec2(1, 0);
@@ -46,11 +47,12 @@ struct Vec3Buffer
 		float bot_left_area = area(bot_left, xy);;
 		float bot_right_area = area(bot_right, xy);;
 		float top_right_area = 1 - top_left_area - bot_left_area - bot_right_area;
-
-		elementwise_atomic_add(ref::glm::uvec2(top_left), width, v3_mul(v3, bot_right_area));
-		elementwise_atomic_add(ref::glm::uvec2(bot_left), width, v3_mul(v3, top_right_area));
-		elementwise_atomic_add(ref::glm::uvec2(bot_right), width, v3_mul(v3, top_left_area));
-		elementwise_atomic_add(ref::glm::uvec2(top_right), width, v3_mul(v3, bot_left_area));
+		*/
+		elementwise_atomic_add(ref::glm::uvec2(top_left), width, v3);
+		//elementwise_atomic_add(ref::glm::uvec2(top_left), width, v3_mul(v3, bot_right_area));
+		//elementwise_atomic_add(ref::glm::uvec2(bot_left), width, v3_mul(v3, top_right_area));
+		//elementwise_atomic_add(ref::glm::uvec2(bot_right), width, v3_mul(v3, top_left_area));
+		//elementwise_atomic_add(ref::glm::uvec2(top_right), width, v3_mul(v3, bot_left_area));
 	}
 	GPU_CPU v3 get(int idx) const
 	{
@@ -60,11 +62,6 @@ struct Vec3Buffer
 	{
 		x[idx] = v.x; y[idx] = v.y; z[idx] = v.z;
 	}
-};
-struct ColorSample
-{
-	int linid;
-	color value;
 };
 struct Pass
 {
@@ -155,7 +152,8 @@ GPU_CPU color connection_throughput(const Hit<World>& light, const Hit<World>& e
 	float g = cos_light * cos_eye / (d * d);
 	return g;
 }
-GPU void store_bdpt_debug(Vec3Buffer& buffer, color value, int width, int height, int ev_count, int lv_count, ref::glm::vec2 xy)
+GPU void store_bdpt_debug(Vec3Buffer& buffer, const color& value, const int width, const int height, 
+	int ev_count, int lv_count, ref::glm::vec2 xy)
 {
 	int component_size = 250;
 	ref::glm::vec2 component_xy = component_image_position(width, height, ev_count, lv_count, component_size, xy.x, xy.y);
@@ -192,75 +190,82 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 	if(ref::glm::any(ref::glm::greaterThan(xy, screen_size - ref::glm::uvec2(1)))) return;
 	int linid = xy.y * width + xy.x;
 	color summed(0,0,0);
-	ray<World> ray0 = camera_ray(*camera, xy, screen_size);
-	Hit<World> eye_vertex_1;
-	if(!ray0.intersect(*scene, &eye_vertex_1)) return;
-
-	for(int iteration_idx = pass->iteration_idx; iteration_idx < (pass->iteration_idx + pass->num_iterations); iteration_idx++)
 	{
-		Random rng(xy, RandomCounter(iteration_idx, 0));
-		color value(0,0,0);
+		float a = powf(2 * tanf(0.5 * (camera->fovy / 180) * PI), 2);
+		for(int iteration_idx = pass->iteration_idx; iteration_idx < (pass->iteration_idx + pass->num_iterations); 
+			iteration_idx++)
+		{
+			Random rng(xy, RandomCounter(iteration_idx, 0));
+			Hit<World> light_vertex;
+			color light_throughput;
+			float light_spatial_ipdf;
+			light_vertex.position = sample_sphere_light(scene->sphere_lights[0], rng.next2(), &light_throughput);
+			light_vertex.normal = direction<World>(scene->sphere_lights[0].origin, light_vertex.position);
+			light_vertex.material = scene->sphere_lights[0].material;
 		
-		Hit<World> light_vertex;
-		color light_spatial_le;
-		float light_spatial_ipdf;
-		light_vertex.position = sample_sphere_light(scene->sphere_lights[0], rng.next2(), &light_spatial_le,
-			&light_spatial_ipdf);
-		light_vertex.normal = direction<World>(scene->sphere_lights[0].origin, light_vertex.position);
-		light_vertex.material = scene->sphere_lights[0].material;
-		
-		color light_throughput = light_spatial_le * light_spatial_ipdf;
-
-		ray<World> light_ray;
-		
-		for(int light_vertex_idx = 0; light_vertex_idx < pass->num_bounces + 1; light_vertex_idx++)
-		{			
-			//direct connect with eye
-			if(light_vertex_idx > 0 && light_vertex.material.type != eSpecular)
-			{
-				bool in_bounds;
-				ref::glm::vec2 ndc;
-				ref::glm::vec2 uv = world_to_screen(light_vertex.position, *camera, width, height, &in_bounds, ndc);
-				if(in_bounds)
+			ray<World> light_ray;
+			for(int light_vertex_idx = 0; light_vertex_idx < pass->num_bounces + 1; light_vertex_idx++)
+			{			
+				//direct connect with eye
+				if(light_vertex.material.type != eSpecular)
 				{
-					ray<World> light_to_eye_shadow_ray = ray<World>(light_vertex.position, camera->eye)
-						.offset_by(RAY_EPSILON);
-					if(!light_to_eye_shadow_ray.intersect_shadow(*scene, camera->eye))
-					{						
-						float costheta_shadow_ev = clamp01(-dot(light_to_eye_shadow_ray.dir, camera->forward));
-						float costheta_shadow_lv = clamp01(dot(light_to_eye_shadow_ray.dir, light_vertex.normal));
-						float d = (light_vertex.position - camera->eye).length();
-						float g = costheta_shadow_ev * costheta_shadow_lv / (d * d);
-						float a = powf(2 * tanf(0.5 * (camera->fovy / 180) * PI), 2);
-						float we = 1
-							/ (a * costheta_shadow_ev * costheta_shadow_ev * costheta_shadow_ev);
-						int num_vertices = light_vertex_idx + 1 + 1;
-						int variations = num_vertices;//s + t + 1 (but no implicit light -> eye path)
-						color addition = light_throughput * light_vertex.material.brdf() * g * we / (float)variations;								
-						int vertex_count = light_vertex_idx + 2; //on light, 0-n on surface, and 1 on eye
-						if(pass->bdpt_debug)
-						{
-							store_bdpt_debug(buffer, addition, width, height, 1, light_vertex_idx + 1, uv);
-						}
-						else
-						{								
-							buffer.elementwise_atomic_add(uv, width, addition);
+					bool in_bounds;
+					ref::glm::vec2 ndc;
+					ref::glm::vec2 uv = world_to_screen(light_vertex.position, *camera, width, height, &in_bounds, ndc);
+					if(in_bounds)
+					{
+						ray<World> light_to_eye_shadow_ray = ray<World>(light_vertex.position, camera->eye)
+							.offset_by(RAY_EPSILON);
+						if(!light_to_eye_shadow_ray.intersect_shadow(*scene, camera->eye))
+						{						
+							float costheta_shadow_ev = clamp01(-dot(light_to_eye_shadow_ray.dir, camera->forward));
+							float costheta_shadow_lv = clamp01(dot(light_to_eye_shadow_ray.dir, light_vertex.normal));
+							float d = (light_vertex.position - camera->eye).length();
+							float g = costheta_shadow_ev * costheta_shadow_lv / (d * d);
+							float we = 1
+								/ (a * costheta_shadow_ev * costheta_shadow_ev * costheta_shadow_ev);
+							int variations = 2;
+							color addition = light_throughput * light_vertex.material.brdf() 
+								* g * we / (float)variations;
+							if(pass->bdpt_debug)
+							{
+								store_bdpt_debug(buffer, addition, width, height, 1, light_vertex_idx + 1, uv);
+							}
+							else
+							{								
+								buffer.elementwise_atomic_add(uv, width, addition);
+							}
 						}
 					}
 				}
+				if(light_vertex_idx < pass->num_bounces)
+				{
+					/* HACK... should divide by PI for vertex 0 */
+					light_throughput = light_throughput * light_vertex.material.brdf();
+					extend_bdpt(rng, light_vertex, &light_ray, &light_throughput);
+					if(!light_ray.intersect(*scene, &light_vertex)) break;
+				}
 			}
-
-			//walk the eye path
+		}
+	}
+	//eye
+	{		
+		color summed(0,0,0);
+		
+		for(int iteration_idx = pass->iteration_idx; iteration_idx < (pass->iteration_idx + pass->num_iterations);
+			iteration_idx++)
+		{			
+			Random rng(xy, RandomCounter(iteration_idx, 1000));
+			color value(0,0,0);
 			color eye_throughput(1,1,1);
+			ray<World> ray0 = camera_ray(*camera, xy, screen_size);
+			Hit<World> eye_vertex_1;
+			if(!ray0.intersect(*scene, &eye_vertex_1)) return;
 			Hit<World> eye_vertex = eye_vertex_1;
 			ray<World> eye_ray = ray0;
 			for(int eye_vertex_idx = 1; eye_vertex_idx < pass->num_bounces + 1; eye_vertex_idx++)
 			{				
-				int num_light_verts = eye_vertex.material.type != eEmissive ? light_vertex_idx + 1 : 0;
-				int num_vertices = num_light_verts + eye_vertex_idx + 1;
-				if(num_vertices > pass->num_bounces + 2) break;
-				int variations = num_vertices;//s + t + 1 (but no implicit light -> eye path)
-				color light_brdf = light_vertex.material.brdf();
+				int variations = 2;				
 				color addition(0,0,0);
 				if(eye_vertex.material.type == eEmissive) //last vertex is implied to be specular
 				{
@@ -268,17 +273,27 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 				}
 				else if(eye_vertex.material.type == eDiffuse)
 				{
-					addition = eye_vertex.material.brdf() * light_brdf
-						* light_throughput * eye_throughput * connection_throughput(eye_vertex, light_vertex, *scene)
-							/ (float)(variations);
+					color light_spatial_throughput;
+					Hit<World> light = 
+						scene->sample_light(eye_vertex.position, rng.next2(), &light_spatial_throughput);
+												
+					color light_throughput = light_spatial_throughput
+						* connection_throughput(light, eye_vertex, *scene);
+					
+					addition = eye_vertex.material.brdf() * light_throughput * eye_throughput / (float)(variations);
+					
 				}
-				if(pass->bdpt_debug)
+				if(!addition.is_black())
 				{
-					store_bdpt_debug(buffer, addition, width, height, eye_vertex_idx + 1, num_light_verts, ref::glm::vec2(xy));
-				}
-				else
-				{	
-					value = value + addition;
+					if(pass->bdpt_debug)
+					{
+						store_bdpt_debug(buffer, addition, width, height, eye_vertex_idx + 1, 
+							eye_vertex.material.type == eEmissive ? 0 : 1, ref::glm::vec2(xy));
+					}
+					else
+					{	
+						value = value + addition;
+					}
 				}
 				if(eye_vertex.material.type == eEmissive) break;
 				if(eye_vertex_idx < pass->num_bounces)
@@ -288,22 +303,14 @@ GPU_ENTRY void gfx_kernel(Vec3Buffer buffer, const Camera* camera, const Scene* 
 
 					if(!eye_ray.intersect(*scene, &eye_vertex, eye_vertex.material.type == eSpecular)) break;
 				}
-				
 			}
-			if(light_vertex_idx < pass->num_bounces)
-			{
-				/* HACK... should divide by PI for vertex 0 */
-				light_throughput = light_throughput * light_vertex.material.brdf();
-				extend_bdpt(rng, light_vertex, &light_ray, &light_throughput);
-				if(!light_ray.intersect(*scene, &light_vertex)) break;
-			}
+			summed = summed + value;
 		}
-
-		summed = summed + value;
-	}
-	if(!pass->bdpt_debug)
-	{
-		buffer.set(linid, summed);
+		
+		if(!pass->bdpt_debug)
+		{
+			buffer.set(linid, summed);
+		}
 	}
 }
 void Kernel::setup(cudaGraphicsResource* output, int width, int height)
