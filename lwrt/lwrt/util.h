@@ -771,11 +771,6 @@ struct Vec3Buffer
 		x[idx] = v.x; y[idx] = v.y; z[idx] = v.z;
 	}
 };
-struct Pass
-{
-	Pass(int iteration_idx) : iteration_idx(iteration_idx) { }
-	int iteration_idx;
-};
 GPU_CPU ref::glm::vec2 world_to_screen(position<World> world, 
 	const Camera& camera, 
 	int width, int height,

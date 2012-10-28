@@ -137,56 +137,60 @@ GPU_ENTRY void pt(
 	const Scene* scene)
 {
 	color value(0,0,0); //3 reg
-	direction<World> wi; //3 reg
-	color eye_T(-1,-1,-1); //init to 'gen eye ray' mode //3 reg 
-	ref::glm::uvec2 xy(linid() % scene->camera.screen_width, linid() / scene->camera.screen_height);
-	
-	auto ray01 = camera_ray(scene->camera, xy, ref::glm::uvec2(scene->camera.screen_width, scene->camera.screen_height)); //6 reg
-	Hit<World> eye_vtx_1; //8 reg
-	ray01.intersect(*scene, &eye_vtx_1); 
-	Hit<World> eye_vtx; //8 reg
-	int bounce = 1;
-	int samples = 0;
-	for(int i = 0; i < NumCycles; i++)
-	{
+ 	direction<World> wi; //3 reg
+ 	color eye_T(-1,-1,-1); //init to 'gen eye ray' mode //3 reg 
+ 	ref::glm::uvec2 xy(linid() % scene->camera.screen_width, linid() / scene->camera.screen_height);
+ 	
+ 	auto ray01 = camera_ray(scene->camera, xy, ref::glm::uvec2(scene->camera.screen_width, scene->camera.screen_height)); //6 reg
+// 	//Hit<World> eye_vtx_1; //8 reg
+// 	//ray01.intersect(*scene, &eye_vtx_1); 
+ 	Hit<World> eye_vtx; //8 reg
+ 	int bounce = 0;
+ 	int samples = 0;
+ 	for(int i = 0; i < NumCycles; i++)
+ 	{
+		//bool prev_diffuse = true;
 		if(eye_T.x == -1)
 		{
 			samples++;
-			eye_vtx = eye_vtx_1;
+			eye_vtx.position = ray01.origin;
 			eye_T = color(1,1,1);
 			wi = ray01.dir;
+
 		}
-		next_wi(*scene, rand2(RandomKey(linid(), 0), RandomCounter(i, 0)), 
-			eye_vtx.normal, eye_vtx.material_id, &wi, &eye_T);
+		else
+		{
+ 			next_wi(*scene, rand2(RandomKey(linid(), 0), RandomCounter(i, 0)), 
+ 				eye_vtx.normal, eye_vtx.material_id, &wi, &eye_T);
+			//prev_diffuse = scene->materials[eye_vtx.material_id].type == eDiffuse;
+		}
 		
 		ray<World> eye_ray(eye_vtx.position, wi);
-		bool prev_diffuse = scene->materials[eye_vtx.material_id].type == eDiffuse;
 		bool hit = eye_ray.offset_by(RAY_EPSILON).intersect(*scene, &eye_vtx);
-		bool is_SD_path = prev_diffuse && scene->materials[eye_vtx.material_id].type == eSpecular;
-		if(hit && scene->materials[eye_vtx.material_id].type != eSpecular && !is_SD_path)
+		//bool is_SD_path = false;//prev_diffuse && hit && scene->materials[eye_vtx.material_id].type == eSpecular;
+		if(hit && scene->materials[eye_vtx.material_id].type != eSpecular)// && !is_SD_path)
 		{
 			color light_T;
 			//connect
 			Hit<World> light_vtx = scene->sample_light(eye_vtx.position, rand2(RandomKey(linid(), 0), RandomCounter(i, 1)), &light_T);
-			if(!ray<World>(eye_vtx.position, light_vtx.position).offset_by(RAY_EPSILON).intersect_shadow(*scene, light_vtx.position))
-			{
-				value = value + light_T * eye_T * 
-					scene->materials[light_vtx.material_id].brdf() * scene->materials[eye_vtx.material_id].brdf() *
-					connection_throughput(*scene, light_vtx, eye_vtx);
-			}
+					
+			value = value + light_T * eye_T * 
+				scene->materials[light_vtx.material_id].brdf() * scene->materials[eye_vtx.material_id].brdf() *
+				connection_throughput(*scene, light_vtx, eye_vtx);
+			
 		}
 		//disable L(D|S)*SDE paths... sample those separately
-		if(!hit || bounce == MaxBounces - 1 || is_SD_path)
+		if(!hit || bounce == MaxBounces - 1)// || is_SD_path)
 		{
 			//reset
 			eye_T.x = -1;
-			bounce = 1; //start at 0 bounce
+			bounce = 0; //start at 0 bounce
 		}
 		else
 		{
 			bounce++;
 		}
-	}
+ 	}
 	value = value / samples;
 	value = value / (value + color(1,1,1));
 	surf2Dwrite(make_float4(value.x, value.y, value.z, 1), output_surf, xy.x*sizeof(float4), xy.y);
@@ -194,18 +198,18 @@ GPU_ENTRY void pt(
 void Kernel::execute(int iteration_idx, int width, int height, bool bdpt_debug, Stats* stats)
 {			
 	const int NUM_BOUNCES = 4;
-	const int CYCLES_PER_ITERATION = NUM_BOUNCES * 10;
+	const int CYCLES_PER_ITERATION = NUM_BOUNCES * 20;
 
 	*stats = Stats::pt(CYCLES_PER_ITERATION, width, height);
 	stats->start();
 	PassData pass_data;
 	pass_data.iteration_idx = iteration_idx;
-	Camera camera(position<World>(0,9,-7), position<World>(0,0,1), bdpt_debug ? 1 : (float)width/height, 
+	Camera camera(position<World>(0 + iteration_idx / 100.f,9,-7), position<World>(0,0,1), bdpt_debug ? 1 : (float)width/height, 
 		width, height, (width), (height));
 	
 	Scene scene(camera);
 	CUDA_CHECK_RETURN(cudaMemcpy(scene_ptr, &scene, sizeof(Scene), cudaMemcpyHostToDevice));
-	CUDA_CHECK_RETURN(cudaMemcpy(pass_ptr, &pass_data, sizeof(Pass), cudaMemcpyHostToDevice));
+	CUDA_CHECK_RETURN(cudaMemcpy(pass_ptr, &pass_data, sizeof(PassData), cudaMemcpyHostToDevice));
 
 	int num_pixels = width * height;
 
