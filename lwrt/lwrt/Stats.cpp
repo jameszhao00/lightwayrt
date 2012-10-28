@@ -10,6 +10,14 @@ Stats Stats::two_way( int samples_per_iteration, int num_bouces, int width, int 
 	return stats;
 }
 
+Stats Stats::pt( int num_cycles, int width, int height )
+{
+	Stats stats;
+	stats.num_combinations = 
+		width * height *
+		num_cycles;
+	return stats;
+}
 void Stats::start()
 {
 	QueryPerformanceCounter((LARGE_INTEGER*)&start_counter);

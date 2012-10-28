@@ -51,8 +51,8 @@ App::App() : m_numFrames(0)
 //--------------------------------------------------------------------------------
 bool App::ConfigureEngineComponents()
 {
-	m_width = 1000;
-	m_height = 1000;
+	m_width = 600;
+	m_height = 600;
 	bool windowed = true;
 
 	// Set the render window parameters and initialize the window
@@ -208,7 +208,8 @@ void App::Initialize()
 		cudaGraphicsRegisterFlagsSurfaceLoadStore));
 	CUDA_CHECK_RETURN(cudaGraphicsResourceSetMapFlags(cuda_tex, cudaGraphicsMapFlagsWriteDiscard));
 	this->m_pRenderer11->PIXEndEvent();
-	kernel.setup(cuda_tex, m_width, m_height);
+	kernel = new Kernel();
+	kernel->setup(cuda_tex, m_width, m_height);
 }
 std::wstring ToString(const float value)
 {
@@ -238,7 +239,7 @@ void App::Update()
 	//if(m_numFrames < 100)//if(m_pTimer->Runtime() < .3)
 	Stats stats;
 	{
-		kernel.execute(m_numFrames, m_width, m_height, true, &stats);
+		kernel->execute(m_numFrames, m_width, m_height, true, &stats);
 	}
 
 	this->m_pRenderer11->PIXEndEvent();

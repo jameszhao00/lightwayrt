@@ -5,6 +5,7 @@ struct Stats
 	int num_combinations;
 	static Stats two_way(int samples_per_iteration, int num_bouces,
 		int width, int height);
+	static Stats pt(int samples_per_iteration, int width, int height);
 	__int64 start_counter;
 	void start();
 	void stop();

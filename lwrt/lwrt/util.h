@@ -1,4 +1,9 @@
 #pragma once
+
+#define LW_INOUT
+#define LW_IN
+#define LW_OUT
+
 #define RAY_EPSILON 0.001f
 
 #ifdef LW_UNIT_TEST
@@ -107,6 +112,10 @@ GPU_CPU float dot(const v3& lhs, const v3& rhs)
 {
 	return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
 }
+GPU_CPU float dot_self(const v3& v)
+{
+	return dot(v, v);
+}
 GPU_CPU v3 v3_add(const v3& lhs, const v3& rhs) { return v3(lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z); }
 GPU_CPU v3 v3_neg(const v3& v) { return v3(-v.x, -v.y, -v.z); }
 GPU_CPU v3 v3_sub(const v3& lhs, const v3& rhs) { return v3_add(lhs, v3_neg(rhs)); }
@@ -162,6 +171,7 @@ struct offset : v3
 	GPU_CPU offset<CS> operator-(const offset<CS>& rhs) const { return v3_sub(*this, rhs); }
 	GPU_CPU offset& operator=(float v) { set(v); return *this;}
 	GPU_CPU float length() const { return v3_len(*this); }
+	GPU_CPU float length2() const { return dot(*this, *this); }
 };
 template<CoordinateSystem CS>
 struct direction : v3
@@ -235,7 +245,10 @@ RandomPair rand2(RandomKey key, RandomCounter counter)
 struct Camera
 {
 	Camera() { }
-	Camera(position<World> eye, position<World> target, float aspect_ratio)
+	Camera(position<World> eye, position<World> target, float aspect_ratio, 
+		int screen_width, int screen_height, int aligned_screen_width, int aligned_screen_height)
+		: screen_width(screen_width), screen_height(screen_height),
+		aligned_screen_width(aligned_screen_width), aligned_screen_height(aligned_screen_height)
 	{
 		fovy = 60;
 
@@ -246,10 +259,18 @@ struct Camera
 		inv_proj = ref::glm::inverse(proj);
 		forward = direction<World>(eye, target);
 	}
+	GPU_CPU ref::glm::uvec2 screen_size() const 
+	{
+		return ref::glm::uvec2(screen_width, screen_height);
+	}
 	GPU_CPU float a() const 
 	{
 		return powf(2 * tanf(0.5 * (fovy / 180.0) * PI), 2);
 	}
+	int screen_width;
+	int screen_height;
+	int aligned_screen_width;
+	int aligned_screen_height;
 	float fovy;
 	position<World> eye;
 	direction<World> forward;
@@ -331,30 +352,30 @@ struct Material
 struct Sphere
 {
 	GPU_CPU Sphere() { }
-	GPU_CPU Sphere(position<World> p_origin, float p_radius, Material p_material) 
-		: origin(p_origin), radius(p_radius), material(p_material) { }
+	GPU_CPU Sphere(position<World> p_origin, float p_radius, int p_material) 
+		: origin(p_origin), radius(p_radius), material_id(p_material) { }
 	position<World> origin;
 	float radius;
-	Material material;
+	int material_id;
 };
 struct Ring
 {
 	position<World> origin;
 	float radius;
 	float height;
-	Material material;
+	int material_id;
 	GPU_CPU Ring() { }
-	GPU_CPU Ring(position<World> origin, float radius, float height, Material p_material) 
-		: origin(origin), radius(radius), height(height), material(p_material) { }
+	GPU_CPU Ring(position<World> origin, float radius, float height, int p_material) 
+		: origin(origin), radius(radius), height(height), material_id(p_material) { }
 
 };
 struct InfiniteHorizontalPlane
 {
 	GPU_CPU InfiniteHorizontalPlane() { }
-	GPU_CPU InfiniteHorizontalPlane(float p_y, Material p_material) 
-		: y(p_y),  material(p_material) { }
+	GPU_CPU InfiniteHorizontalPlane(float p_y, int p_material) 
+		: y(p_y),  material_id(p_material) { }
 	float y;
-	Material material;
+	int material_id;
 };
 GPU_CPU direction<World> changeCoordSys(direction<World> n, direction<ZUp> dir)
 {	
@@ -378,7 +399,7 @@ struct Hit
 {
 	direction<CS> normal;
 	position<CS> position;
-	Material material;
+	int material_id;
 	float t;
 
 	GPU Hit<CS> shuffle(unsigned int idx)
@@ -387,7 +408,7 @@ struct Hit
 		result.normal = normal.shuffle(idx);
 		result.position = position.shuffle(idx);
 		result.t = __shfl(t, idx);
-		result.material = material.shuffle(idx);
+		result.material_id = __shfl(material_id, idx);
 		return result;
 	}
 	GPU Hit<CS> shuffle_up(unsigned int delta)
@@ -396,43 +417,54 @@ struct Hit
 		result.normal = normal.shuffle_up(delta);
 		result.position = position.shuffle_up(delta);
 		result.t = shuffle_up_wrap(t, delta);
-		result.material = material.shuffle_up(delta);
+		result.material_id = shuffle_up_wrap(material_id, delta);
 		return result;
 	}
 };
-#define NUM_SPHERES 4
+#define NUM_SPHERES 2
 #define NUM_SPHERE_LIGHTS 1
 #define NUM_PLANES 1
 #define NUM_RINGS 1
+#define NUM_MATERIALS 7
 struct Scene
 {
 	Sphere spheres[NUM_SPHERES];
 	Sphere sphere_lights[NUM_SPHERE_LIGHTS];
 	InfiniteHorizontalPlane planes[NUM_PLANES];
 	Ring rings[NUM_RINGS];
-	GPU_CPU Scene( ) 
+	Material materials[NUM_MATERIALS];
+	Camera camera;
+	Scene( const Camera& camera) : camera(camera)
 	{
-		spheres[0] = Sphere(position<World>(3,0,0), 1, Material::make_diffuse(color(1,0,0)));
-		spheres[1] = Sphere(position<World>(1,0,0), 1, Material::make_diffuse(color(0,1,0)));
-		spheres[2] = Sphere(position<World>(2, 2, 0), 1.5f, Material::make_diffuse(color(0,0,1)));
-		spheres[3] = Sphere(position<World>(5, 5, 0), 3.f, Material::make_diffuse(color(1.f,1,1)));
-		planes[0] = InfiniteHorizontalPlane(0,Material::make_diffuse(color(1,1,1)));
-		rings[0] = Ring(position<World>(0,0,0), 5, 1,Material::make_specular(color(1,1,1)));
+		materials[0] = Material::make_diffuse(color(1,0,0));
+		materials[1] = Material::make_diffuse(color(0,1,0));
+		materials[2] = Material::make_diffuse(color(0,0,1));
+		materials[3] = Material::make_diffuse(color(1.f,1,1));
+		materials[4] = Material::make_diffuse(color(1,1,1));
+		materials[5] = Material::make_specular(color(1,1,1));
+		materials[6] = Material::make_emissive(color(600,600,600));
 
-		sphere_lights[0] = Sphere(position<World>(10, 6, 0), 2,Material::make_emissive(color(20,20,20)));
+		spheres[0] = Sphere(position<World>(3,0,0), 1, 0);
+		spheres[1] = Sphere(position<World>(1,0,0), 1, 1);
+		//spheres[2] = Sphere(position<World>(2, 2, 0), 1.5f, 2);
+		//spheres[3] = Sphere(position<World>(5, 5, 0), 3.f, 3);
+		planes[0] = InfiniteHorizontalPlane(0, 4);
+		rings[0] = Ring(position<World>(0,0,0), 5, 1, 5);
+
+		sphere_lights[0] = Sphere(position<World>(10, 6, 0), .4, 6);
 	}
-	GPU_CPU Hit<World> sample_light(position<World> pos, RandomPair u, color* spatial_throughput) const
+	GPU_CPU Hit<World> sample_light(const position<World>& pos, const RandomPair& u, color* spatial_throughput) const
 	{
 		float hemi_inv_pdf;
 		direction<World> wi = sampleUniformHemi(direction<World>(sphere_lights[0].origin, pos), u, &hemi_inv_pdf);
 		float r_squared = sphere_lights[0].radius * sphere_lights[0].radius;
 		position<World> sample_pos = sphere_lights[0].origin + wi * sphere_lights[0].radius;
 
-		*spatial_throughput = sphere_lights[0].material.emissive.emission * PI
+		*spatial_throughput = materials[sphere_lights[0].material_id].emissive.emission * PI
 			* 2 * PI * r_squared;
 
 		Hit<World> hit;
-		hit.material = sphere_lights[0].material;
+		hit.material_id = sphere_lights[0].material_id;
 		hit.normal = direction<World>(sphere_lights[0].origin, sample_pos);
 		hit.position = sample_pos;
 		return hit;
@@ -468,7 +500,7 @@ struct ray
 		if(discrim > 0)
 		{
 			float neg_b = - rd.x * ro.x - rd.z * ro.z;
-			float root = sqrt(discrim);
+			float root = sqrtf(discrim);
 			float inv = 1/rd_xz_dot;
 
 			float t0 = (neg_b - root) * inv;
@@ -487,7 +519,7 @@ struct ray
 			hit->normal = direction<CS>((hit->position - ring.origin) * v3(1,0,1))
 				* (outside ? 1 : -1);
 
-			hit->material = ring.material;
+			hit->material_id = ring.material_id;
 			hit->t = t;
 			return true;
 		}
@@ -506,7 +538,7 @@ struct ray
 			hit->normal = -n;
 			hit->position = l0 + l * d;
 			hit->t = d;
-			hit->material = plane.material;
+			hit->material_id = plane.material_id;
 			return true;
 		}
 		return false;
@@ -521,7 +553,7 @@ struct ray
 		float discriminant = b*b - 4*a*c;
 		if(discriminant > 0)
 		{	
-			float det = sqrt(discriminant);		
+			float det = sqrtf(discriminant);		
 			float t0 = (-b-det) * .5;
 			float t1 = (-b+det) * .5;
 			if(t0 > 0 || t1 > 0)
@@ -536,7 +568,7 @@ struct ray
 
 				hit->normal = direction<World>(sphere.origin, hit_pos);
 				hit->position = hit_pos;
-				hit->material = sphere.material;
+				hit->material_id = sphere.material_id;
 				hit->t = t;
 				return true;
 			}
@@ -573,7 +605,7 @@ struct ray
 		}
 		return false;
 	}
-	GPU_CPU bool intersect(const Scene& scene, Hit<CS>* hit, bool include_light = false) const
+	GPU_CPU __noinline__ bool intersect(const Scene& scene, Hit<CS>* hit, bool include_light = false) const
 	{
 		bool has_hit = false;
 		for(int i = 0; i < NUM_SPHERES; i++)
@@ -620,12 +652,13 @@ struct ray
 	}
 };
 #ifndef LW_CPU
-GPU SreenPosition screen_xy()
-{	
-	return SreenPosition(
-		blockIdx.x * blockDim.x + threadIdx.x, 
-		blockIdx.y * blockDim.y + threadIdx.y);
-}
+//not really accurate
+// GPU SreenPosition screen_xy()
+// {	
+// 	return SreenPosition(
+// 		blockIdx.x * blockDim.x + threadIdx.x, 
+// 		blockIdx.y * blockDim.y + threadIdx.y);
+// }
 #endif
 GPU_CPU Ndc ndc(ref::glm::uvec2 screen_size, ref::glm::uvec2 screen_pos)
 {
@@ -639,7 +672,7 @@ GPU_CPU ray<World> camera_ray(const Camera& camera, ref::glm::uvec2 screen_pos, 
 	position<World> world(result.x, result.y, result.z);
 	return ray<World>(world, direction<World>(camera.eye, world));
 }
-GPU_CPU direction<World> sampleCosWeightedHemi(direction<World> n, ref::glm::vec2 u, InverseProjectedPdf *inv_pdf)
+GPU_CPU direction<World> sampleCosWeightedHemi(const direction<World>& n, const RandomPair& u, InverseProjectedPdf *inv_pdf)
 {
 	float a = sqrt(1 - u.y);
 	float b = sqrt(u.y);
@@ -666,12 +699,13 @@ GPU_CPU bool bit_set(unsigned int x, int bit)
 {
 	return (x & (1 << bit));
 }
-GPU_CPU Hit<World> sample_sphere_light(const Sphere& sphere, RandomPair u, 
+GPU_CPU Hit<World> sample_sphere_light(const Scene* scene,
+	const Sphere& sphere, RandomPair u, 
 	color* spatial_throughput)
 {
 	//assert(sphere.material.type == eEmissive);
 	float a = sqrtf(u.y * (1 - u.y));
-	*spatial_throughput = sphere.material.emissive.emission * PI 
+	*spatial_throughput = scene->materials[sphere.material_id].emissive.emission * PI 
 		* 4 * PI * sphere.radius * sphere.radius;
 	Hit<World> hit;
 	position<World> pos(
@@ -680,7 +714,7 @@ GPU_CPU Hit<World> sample_sphere_light(const Sphere& sphere, RandomPair u,
 		sphere.radius * (1 - 2 * u.y) + sphere.origin.z);
 	hit.position = pos;
 	hit.normal = direction<World>(sphere.origin, pos);
-	hit.material = sphere.material;
+	hit.material_id = sphere.material_id;
 	return hit;
 }
 
@@ -781,9 +815,9 @@ GPU_CPU ref::glm::vec2 component_image_position(int width, int height, int eye_v
 	return ref::glm::vec2(x, y) 
 		+ ref::glm::vec2(ref::glm::vec2((float)original_x / width, (float)original_y / height) * ref::glm::vec2(component_size, component_size));
 }
-GPU_CPU color connection_throughput(const Hit<World>& light, const Hit<World>& eye, const Scene& scene)
+GPU_CPU color connection_throughput(const Scene& scene, const Hit<World>& light, const Hit<World>& eye)
 {
-	if(light.material.type == eSpecular || eye.material.type == eSpecular) return color(0,0,0);
+	if(scene.materials[light.material_id].type == eSpecular || scene.materials[eye.material_id].type == eSpecular) return color(0,0,0);
 
 	ray<World> shadow(light.position, eye.position);
 	if(shadow.offset_by(RAY_EPSILON).intersect_shadow(scene, eye.position)) return color(0,0,0);
@@ -804,26 +838,47 @@ GPU void store_bdpt_debug(Vec3Buffer& buffer, const color& value, const int widt
 	color add = value * (float)(component_size * component_size) / (width * height);
 	buffer.elementwise_atomic_add(component_xy, width, add);
 }
-GPU void extend(const RandomPair& u, const Hit<World>& hit, 
-	ray<World>* path_ray, color* throughput)
+GPU void next_wi(
+	const Scene& scene,
+	const RandomPair& u, 
+	const direction<World>& normal, 
+	int material_id,
+	const direction<World>& incident, 
+	const color& incident_throughput,
+	direction<World>* wi,
+	color* wi_throughput)
 {
-	direction<World> wi;
-	if(hit.material.type != eSpecular)
+	if(scene.materials[material_id].type != eSpecular)
 	{
 		InverseProjectedPdf ippdf;
-		wi = sampleCosWeightedHemi(hit.normal, u, &ippdf);					
-		*throughput = *throughput * ippdf;
+		*wi = sampleCosWeightedHemi(normal, u, &ippdf);					
+		*wi_throughput = incident_throughput * ippdf;
 	}
 	else
 	{
-		wi = path_ray->dir.reflect(hit.normal);
-		*throughput = *throughput * hit.material.specular.albedo;
+		*wi = incident.reflect(normal);
+		*wi_throughput = incident_throughput * scene.materials[material_id].specular.albedo;
 	}
-	*path_ray = ray<World>(hit.position, wi).offset_by(RAY_EPSILON);
+}
+GPU void next_wi(
+	const Scene& scene,
+	const RandomPair& u, 
+	const direction<World>& normal, 
+	int material_id,
+	direction<World>* incident, 
+	color* incident_throughput)
+{
+	if(scene.materials[material_id].type != eSpecular)
+	{
+		InverseProjectedPdf ippdf;
+		*incident = sampleCosWeightedHemi(normal, u, &ippdf);					
+		*incident_throughput = *incident_throughput * ippdf * scene.materials[material_id].brdf();
+	}
+	else
+	{
+		*incident = incident->reflect(normal);
+		*incident_throughput = *incident_throughput * scene.materials[material_id].specular.albedo;
+	}
 }
 GPU_CPU float pow3(float v) { return v * v * v; }
 GPU_CPU float pow2(float v) { return v * v; }
-GPU_CPU float g(const direction<World>& n0, const direction<World>& n1, float d)
-{
-	return dot(n0, n1) / (d * d);
-}

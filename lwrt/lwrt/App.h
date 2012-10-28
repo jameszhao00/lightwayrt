@@ -62,5 +62,5 @@ protected:
 	UINT m_height;
 	int m_numFrames;
 
-	Kernel kernel;
+	Kernel* kernel;
 };
