@@ -51,8 +51,8 @@ App::App() : m_numFrames(0)
 //--------------------------------------------------------------------------------
 bool App::ConfigureEngineComponents()
 {
-	m_width = 1000;
-	m_height = 1000;
+	m_width = 700;
+	m_height = 700;
 	bool windowed = true;
 
 	// Set the render window parameters and initialize the window

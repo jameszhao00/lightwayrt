@@ -423,7 +423,7 @@ struct Hit
 		return result;
 	}
 };
-#define NUM_SPHERES 2
+#define NUM_SPHERES 4
 #define NUM_SPHERE_LIGHTS 1
 #define NUM_PLANES 1
 #define NUM_RINGS 1
@@ -449,8 +449,8 @@ struct Scene
 
 		spheres[0] = Sphere(position<World>(3,0,0), 1, 0);
 		spheres[1] = Sphere(position<World>(1,0,0), 1, 1);
-		//spheres[2] = Sphere(position<World>(2, 2, 0), 1.5f, 2);
-		//spheres[3] = Sphere(position<World>(5, 5, 0), 3.f, 3);
+		spheres[2] = Sphere(position<World>(2, 2, 0), 1.5f, 2);
+		spheres[3] = Sphere(position<World>(5, 5, 0), 3.f, 3);
 		planes[0] = InfiniteHorizontalPlane(0, 4);
 		rings[0] = Ring(position<World>(0,0,0), 5, 1, 5);
 
