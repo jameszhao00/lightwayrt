@@ -61,6 +61,8 @@ enum CoordinateSystem
 	ZUp
 };
 
+GPU_CPU float pow3(float v) { return v * v * v; }
+GPU_CPU float pow2(float v) { return v * v; }
 
 GPU_CPU bool close_to(float test, float expected, float epsilon = 0.001f)
 {
@@ -434,7 +436,8 @@ struct Scene
 	Ring rings[NUM_RINGS];
 	Material materials[NUM_MATERIALS];
 	Camera camera;
-	Scene( const Camera& camera) : camera(camera)
+	Camera previous_frame_camera;
+	Scene( const Camera& camera, const Camera& previous_frame_camera) : camera(camera), previous_frame_camera(previous_frame_camera)
 	{
 		materials[0] = Material::make_diffuse(color(1,0,0));
 		materials[1] = Material::make_diffuse(color(0,1,0));
@@ -442,7 +445,7 @@ struct Scene
 		materials[3] = Material::make_diffuse(color(1.f,1,1));
 		materials[4] = Material::make_diffuse(color(1,1,1));
 		materials[5] = Material::make_specular(color(1,1,1));
-		materials[6] = Material::make_emissive(color(600,600,600));
+		materials[6] = Material::make_emissive(color(20000,20000,20000));
 
 		spheres[0] = Sphere(position<World>(3,0,0), 1, 0);
 		spheres[1] = Sphere(position<World>(1,0,0), 1, 1);
@@ -451,17 +454,23 @@ struct Scene
 		planes[0] = InfiniteHorizontalPlane(0, 4);
 		rings[0] = Ring(position<World>(0,0,0), 5, 1, 5);
 
-		sphere_lights[0] = Sphere(position<World>(10, 6, 0), .4, 6);
+		sphere_lights[0] = Sphere(position<World>(10, 6, 0), .04, 6);
 	}
 	GPU_CPU Hit<World> sample_light(const position<World>& pos, const RandomPair& u, color* spatial_throughput) const
 	{
-		float hemi_inv_pdf;
-		direction<World> wi = sampleUniformHemi(direction<World>(sphere_lights[0].origin, pos), u, &hemi_inv_pdf);
-		float r_squared = sphere_lights[0].radius * sphere_lights[0].radius;
+		//we can't sample hemi, as some parts are invisible
+		//sample from theta = 0, theta_max, from global illum compendium
+		float costheta_max = sphere_lights[0].radius / (pos - sphere_lights[0].origin).length();
+		float a = sqrt(1-pow2(1-u.y*(1-costheta_max)));
+
+		direction<ZUp> dir_zup(cos(2 * PI * u.x) * a, sin(2 * PI * u.x) * a, 1 - u.y * (1 - costheta_max));
+		direction<World> wi(changeCoordSys(direction<World>(sphere_lights[0].origin, pos), dir_zup));
 		position<World> sample_pos = sphere_lights[0].origin + wi * sphere_lights[0].radius;
 
-		*spatial_throughput = materials[sphere_lights[0].material_id].emissive.emission * PI
-			* 2 * PI * r_squared;
+		float r_squared = sphere_lights[0].radius * sphere_lights[0].radius;
+		float spatial_idf = 2 * PI * (1-costheta_max) * r_squared;
+		color spatial_le = materials[sphere_lights[0].material_id].emissive.emission * PI;
+		*spatial_throughput = spatial_le * spatial_idf;
 
 		Hit<World> hit;
 		hit.material_id = sphere_lights[0].material_id;
@@ -771,19 +780,19 @@ struct Vec3Buffer
 		x[idx] = v.x; y[idx] = v.y; z[idx] = v.z;
 	}
 };
-GPU_CPU ref::glm::vec2 world_to_screen(position<World> world, 
+GPU_CPU ref::glm::vec2 world_to_screen(const position<World>& world, 
 	const Camera& camera, 
-	int width, int height,
-	bool* in_bounds,
-	ref::glm::vec2& ndc)
+	int width, 
+	int height,
+	bool* in_bounds)
 {
 	auto pos_view = camera.view * ref::glm::vec4(to_glm(world), 1);
 	auto pos_clip = camera.proj * pos_view;
 	auto ndc_4 = pos_clip / pos_clip.w;
 	*in_bounds = ndc_4.x > -1 && ndc_4.y > -1 && ndc_4.x < 1 && ndc_4.y < 1 && ndc_4.z > -1 && ndc_4.z < 1;
-	ndc = ref::glm::vec2(ndc_4);
-	return ref::glm::vec2(ref::glm::floor(
-		(ref::glm::vec2(ndc) * ref::glm::vec2(.5, -.5) + ref::glm::vec2(.5, .5)) * ref::glm::vec2(width, height)));
+	ref::glm::vec2 ndc(ndc_4);
+	/*return (ref::glm::vec2(ndc) * ref::glm::vec2(.5, -.5) + ref::glm::vec2(.5, .5)) * ref::glm::vec2(width, height);*/
+	return (ref::glm::vec2(ndc) * ref::glm::vec2(1, -1) + ref::glm::vec2(1, 1)) * ref::glm::vec2(width, height) * ref::glm::vec2(.5, .5);
 }
 struct Random
 {
@@ -875,5 +884,3 @@ GPU void next_wi(
 		*incident_throughput = *incident_throughput * scene.materials[material_id].specular.albedo;
 	}
 }
-GPU_CPU float pow3(float v) { return v * v * v; }
-GPU_CPU float pow2(float v) { return v * v; }

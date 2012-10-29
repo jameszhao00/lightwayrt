@@ -51,8 +51,8 @@ App::App() : m_numFrames(0)
 //--------------------------------------------------------------------------------
 bool App::ConfigureEngineComponents()
 {
-	m_width = 600;
-	m_height = 600;
+	m_width = 1000;
+	m_height = 1000;
 	bool windowed = true;
 
 	// Set the render window parameters and initialize the window
@@ -174,6 +174,7 @@ void App::Initialize()
 	FilteredConfig.SetColorBuffer( m_width, m_height ); 
 	FilteredConfig.SetBindFlags(D3D11_BIND_SHADER_RESOURCE);
 	FilteredConfig.SetFormat(DXGI_FORMAT_R32G32B32A32_FLOAT);
+	//FilteredConfig.SetFormat(DXGI_FORMAT_R16G16B16A16_FLOAT);
 	//FilteredConfig.SetFormat(DXGI_FORMAT_R8G8B8A8_UNORM);
 	m_Output1 = m_pRenderer11->CreateTexture2D( &FilteredConfig, 0 );
 

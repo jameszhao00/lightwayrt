@@ -12,13 +12,15 @@ struct Vec3Buffer;
 	exit(1);															\
 	} }
 void unit_test();
+struct Camera;
 struct Kernel
 {
 	void setup(cudaGraphicsResource* output, int width, int height);
 	void execute(int iteration_idx, int width, int height, bool bdpt_debug, Stats* stats);
-
+	Camera* previous_frame_camera;
 	void* scene_ptr;
 	void* pass_ptr;
+	cudaArray_t cached_diffuse;
 	cudaGraphicsResource* framebuffer_resource;
 	size_t output_byte_size;
 

@@ -7,12 +7,9 @@
 
 #define CATCH_CONFIG_RUNNER
 #include "catch.hpp"
-
 #include "validate_importance_sampling.h"
 
 #ifndef LW_UNIT_TEST
-surface<void, cudaSurfaceType2D> output_surf;
-
 struct PassData
 {
 	int iteration_idx;
@@ -20,32 +17,10 @@ struct PassData
 };
 GPU int linid() { return blockIdx.x * blockDim.x + threadIdx.x; }
 GPU ref::glm::uvec2 pixel_xy(int w, int h) { return ref::glm::uvec2(linid() % w, linid() / h); }
-template<int SAMPLES_PER_ITERATION>
-GPU_ENTRY void transfer_image(Vec3Buffer new_buffer, Vec3Buffer existing_buffer, int iteration_idx, int width, int height)
-{
-	ref::glm::uvec2 screen_size(width, height);		
-	ref::glm::uvec2 xy = pixel_xy(width, height);
-	if(ref::glm::any(ref::glm::greaterThan(xy, screen_size - ref::glm::uvec2(1)))) return;
 
-	color existing = existing_buffer.get(linid());
-	float existing_weight = (float)iteration_idx / (iteration_idx + 1);
-	color combined = (color(new_buffer.get(linid())) / (float)SAMPLES_PER_ITERATION) * (1 - existing_weight);
-	if(iteration_idx > 0)
-	{
-		combined = combined + existing * (existing_weight);
-	}
-	new_buffer.set(linid(), v3(0,0,0));
-	
-	existing_buffer.set(linid(), combined);
-	color combined_tonemapped = combined  / (combined + color(1,1,1));
-	surf2Dwrite(make_float4(combined_tonemapped.x, combined_tonemapped.y, combined_tonemapped.z, 1), output_surf, xy.x*sizeof(float4), xy.y);
-	
-}
+#define COLOR_ELEMENT_TYPE float
+
 typedef int MaterialId;
-
-const float RESET_TO_EYE_MARKER = -10;
-const float RESET_TO_LIGHT_MARKER = -20;
-
 GPU_CPU float gaussian(float num, float sigma)
 {
 	return expf(-1 * num / (2 * sigma * sigma));
@@ -93,7 +68,10 @@ int aligned_size(int x)
 	const int ALIGNMENT_SIZE = 32;
 	return (int)ceil((float)x / ALIGNMENT_SIZE);
 }
-
+cudaChannelFormatDesc make_diffuse_texdesc()
+{
+	return cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
+}
 void Kernel::setup(cudaGraphicsResource* output, int width, int height)
 {	
 	//TODO: setup pass data
@@ -101,6 +79,10 @@ void Kernel::setup(cudaGraphicsResource* output, int width, int height)
 	int num_pixels = (width) * (height);
 	CUDA_CHECK_RETURN(cudaMalloc((void**) &scene_ptr, sizeof(Scene)));
 	CUDA_CHECK_RETURN(cudaMalloc((void**) &pass_ptr, sizeof(PassData)));
+	{
+		cudaChannelFormatDesc format = make_diffuse_texdesc();
+		cudaMallocArray(&cached_diffuse, &format, width, height, cudaArraySurfaceLoadStore);
+	}
 	//CUDA_CHECK_RETURN(cudaMalloc((void**) &buffer, sizeof(ref::glm::vec4) * width * height));
 	new_buffer = new Vec3Buffer();
 	new_buffer->init(num_pixels);
@@ -129,85 +111,115 @@ void Kernel::setup(cudaGraphicsResource* output, int width, int height)
 	eye_vtx_normal->init(num_pixels);
 	eye_throughput->init(num_pixels);
 	eye_wi->init(num_pixels);
+
+	previous_frame_camera = new Camera();
 }
 
-template<int NumCycles, int MaxBounces>
+surface<void, cudaSurfaceType2D> output_surf;
+//surface<void, cudaSurfaceType2D> cached_diffuse_surf;
+texture<float4, 2> cached_diffuse_tex;
+template<int NumCycles, int NumDirectLight, int MaxBounces>
 GPU_ENTRY void pt(
 	const PassData* pass_data,
 	const Scene* scene)
 {
-	color value(0,0,0); //3 reg
- 	direction<World> wi; //3 reg
- 	color eye_T(-1,-1,-1); //init to 'gen eye ray' mode //3 reg 
+	color value_direct(0,0,0);
+	color value_indirect(0,0,0); //3 reg
+	color caustic(0,0,0);
  	ref::glm::uvec2 xy(linid() % scene->camera.screen_width, linid() / scene->camera.screen_height);
  	
  	auto ray01 = camera_ray(scene->camera, xy, ref::glm::uvec2(scene->camera.screen_width, scene->camera.screen_height)); //6 reg
-// 	//Hit<World> eye_vtx_1; //8 reg
-// 	//ray01.intersect(*scene, &eye_vtx_1); 
- 	Hit<World> eye_vtx; //8 reg
- 	int bounce = 0;
- 	int samples = 0;
- 	for(int i = 0; i < NumCycles; i++)
- 	{
-		//bool prev_diffuse = true;
-		if(eye_T.x == -1)
-		{
-			samples++;
-			eye_vtx.position = ray01.origin;
-			eye_T = color(1,1,1);
-			wi = ray01.dir;
-
-		}
-		else
-		{
- 			next_wi(*scene, rand2(RandomKey(linid(), 0), RandomCounter(i, 0)), 
- 				eye_vtx.normal, eye_vtx.material_id, &wi, &eye_T);
-			//prev_diffuse = scene->materials[eye_vtx.material_id].type == eDiffuse;
-		}
-		
-		ray<World> eye_ray(eye_vtx.position, wi);
-		bool hit = eye_ray.offset_by(RAY_EPSILON).intersect(*scene, &eye_vtx);
-		//bool is_SD_path = false;//prev_diffuse && hit && scene->materials[eye_vtx.material_id].type == eSpecular;
-		if(hit && scene->materials[eye_vtx.material_id].type != eSpecular)// && !is_SD_path)
+	Hit<World> eye_vtx1; 
+	//direct lighting
+	{
+		bool hit = ray01.offset_by(RAY_EPSILON).intersect(*scene, &eye_vtx1);
+		for(int i = 0; i < NumDirectLight; i++)
 		{
 			color light_T;
-			//connect
-			Hit<World> light_vtx = scene->sample_light(eye_vtx.position, rand2(RandomKey(linid(), 0), RandomCounter(i, 1)), &light_T);
-					
-			value = value + light_T * eye_T * 
-				scene->materials[light_vtx.material_id].brdf() * scene->materials[eye_vtx.material_id].brdf() *
-				connection_throughput(*scene, light_vtx, eye_vtx);
+			Hit<World> light_vtx = scene->sample_light(eye_vtx1.position, rand2(RandomKey(linid(), pass_data->iteration_idx), RandomCounter(clock(), 1)), &light_T);
+			color contribution = light_T * /* eye_T * = 1*/
+				scene->materials[light_vtx.material_id].brdf() * scene->materials[eye_vtx1.material_id].brdf() *
+				connection_throughput(*scene, light_vtx, eye_vtx1);
+			value_direct = value_direct + contribution;
+		}
+		value_direct = value_direct / (float)NumDirectLight;
+	}
+	//indirect lighting
+	{
+ 		int bounce = 0;
+ 		int samples = 0;
+ 		Hit<World> eye_vtx; //8 reg
+ 		color eye_T(-1,-1,-1); //init to 'gen eye ray' mode //3 reg 
+ 		direction<World> wi; //3 reg
+ 		for(int i = 0; i < NumCycles; i++)
+ 		{
+			//bool prev_diffuse = true;
+			if(eye_T.x == -1)
+			{
+				samples++;
+				eye_T = color(1,1,1);
+				wi = ray01.dir;
+				eye_vtx = eye_vtx1; //assume 1 full path already constructed				
+			}
+ 			next_wi(*scene, rand2(RandomKey(linid(), pass_data->iteration_idx), RandomCounter(clock(), 0)), 
+ 				eye_vtx.normal, eye_vtx.material_id, &wi, &eye_T);			
+		
+			ray<World> eye_ray(eye_vtx.position, wi);
+			bool hit = eye_ray.offset_by(RAY_EPSILON).intersect(*scene, &eye_vtx);
+			//bool is_SD_path = false;//prev_diffuse && hit && scene->materials[eye_vtx.material_id].type == eSpecular;
+			if(hit && scene->materials[eye_vtx.material_id].type != eSpecular)// && !is_SD_path)
+			{
+				color light_T;
+				//connect
+				Hit<World> light_vtx = scene->sample_light(eye_vtx.position, rand2(RandomKey(linid(), pass_data->iteration_idx), RandomCounter(clock(), 1)), &light_T);
+				color contribution = light_T * eye_T * 
+					scene->materials[light_vtx.material_id].brdf() * scene->materials[eye_vtx.material_id].brdf() *
+					connection_throughput(*scene, light_vtx, eye_vtx);
+				value_indirect = value_indirect + contribution;
 			
-		}
-		//disable L(D|S)*SDE paths... sample those separately
-		if(!hit || bounce == MaxBounces - 1)// || is_SD_path)
-		{
-			//reset
-			eye_T.x = -1;
-			bounce = 0; //start at 0 bounce
-		}
-		else
-		{
-			bounce++;
-		}
- 	}
-	value = value / samples;
-	value = value / (value + color(1,1,1));
-	surf2Dwrite(make_float4(value.x, value.y, value.z, 1), output_surf, xy.x*sizeof(float4), xy.y);
+			}
+			//disable L(D|S)*SDE paths... sample those separately
+			if(!hit || bounce == MaxBounces - 1)// || is_SD_path)
+			{
+				//reset
+				eye_T.x = -1;
+				bounce = 1; //start at 2 bounce
+			}
+			else
+			{
+				bounce++;
+			}
+ 		}
+		value_indirect = value_indirect / samples;
+	}
+	color total_contrib = value_indirect + value_direct;
+	color tonemapped = total_contrib / (total_contrib + color(1,1,1));
+	surf2Dwrite(tonemapped.to_f4(), output_surf, xy.x*sizeof(float4), xy.y);
 }
 void Kernel::execute(int iteration_idx, int width, int height, bool bdpt_debug, Stats* stats)
 {			
 	const int NUM_BOUNCES = 4;
 	const int CYCLES_PER_ITERATION = NUM_BOUNCES * 20;
-
+	const int NUM_DIRECT_SAMPLES = 5;
 	*stats = Stats::pt(CYCLES_PER_ITERATION, width, height);
 	stats->start();
 	PassData pass_data;
 	pass_data.iteration_idx = iteration_idx;
-	Camera camera(position<World>(0 + iteration_idx / 100.f,9,-7), position<World>(0,0,1), bdpt_debug ? 1 : (float)width/height, 
+	pass_data.iteration_idx = 1;
+
+	{		
+		cached_diffuse_tex.addressMode[0] = cudaAddressModeClamp;
+		cached_diffuse_tex.addressMode[1] = cudaAddressModeClamp;
+		cached_diffuse_tex.filterMode = cudaFilterModeLinear;
+		cached_diffuse_tex.normalized = false;
+	}
+
+	Camera camera(position<World>(0,9,-7), position<World>(0,0,1), bdpt_debug ? 1 : (float)width/height, 
 		width, height, (width), (height));
-	
-	Scene scene(camera);
+	if(iteration_idx == 0) *previous_frame_camera = camera;
+	Scene scene(camera, *previous_frame_camera);
+	scene.sphere_lights[0].origin.z += iteration_idx / 10.f;
+	*previous_frame_camera = camera;
 	CUDA_CHECK_RETURN(cudaMemcpy(scene_ptr, &scene, sizeof(Scene), cudaMemcpyHostToDevice));
 	CUDA_CHECK_RETURN(cudaMemcpy(pass_ptr, &pass_data, sizeof(PassData), cudaMemcpyHostToDevice));
 
@@ -221,9 +233,12 @@ void Kernel::execute(int iteration_idx, int width, int height, bool bdpt_debug, 
 	CUDA_CHECK_RETURN(cudaGraphicsMapResources(1, &framebuffer_resource));
 	CUDA_CHECK_RETURN(cudaGraphicsSubResourceGetMappedArray(&framebuffer_ptr, framebuffer_resource, 0, 0));
 	CUDA_CHECK_RETURN(cudaBindSurfaceToArray(output_surf, framebuffer_ptr));
+	//CUDA_CHECK_RETURN(cudaBindSurfaceToArray(cached_diffuse_surf, cached_diffuse));
 	
-	pt<CYCLES_PER_ITERATION, NUM_BOUNCES><<<blocks, threadPerBlock>>>((PassData*)pass_ptr, (Scene*)scene_ptr);
-
+	cudaChannelFormatDesc format = make_diffuse_texdesc();
+	CUDA_CHECK_RETURN(cudaBindTextureToArray(cached_diffuse_tex, cached_diffuse, format));
+	pt<CYCLES_PER_ITERATION, NUM_DIRECT_SAMPLES, NUM_BOUNCES><<<blocks, threadPerBlock>>>((PassData*)pass_ptr, (Scene*)scene_ptr);
+	cudaMemcpyArrayToArray(cached_diffuse, 0, 0, framebuffer_ptr, 0, 0, sizeof(float4) * width * height);
 	CUDA_CHECK_RETURN(cudaGraphicsUnmapResources(1, &framebuffer_resource));
 	stats->stop();
 }
